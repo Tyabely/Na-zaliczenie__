@@ -1,0 +1,106 @@
+{
+  "Version": 1,
+  "WorkspaceRootPath": "C:\\Users\\igors\\Na zaliczenie\\",
+  "Documents": [
+    {
+      "AbsoluteMoniker": "D:0:0:{82C82742-B20F-1428-7F09-FC6272DF4FD9}|Assembly-CSharp.csproj|C:\\Users\\igors\\Na zaliczenie\\assets\\scripts\\playeraction.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{82C82742-B20F-1428-7F09-FC6272DF4FD9}|Assembly-CSharp.csproj|solutionrelative:assets\\scripts\\playeraction.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{82C82742-B20F-1428-7F09-FC6272DF4FD9}|Assembly-CSharp.csproj|c:\\users\\igors\\na zaliczenie\\assets\\scripts\\shotgun.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{82C82742-B20F-1428-7F09-FC6272DF4FD9}|Assembly-CSharp.csproj|solutionrelative:assets\\scripts\\shotgun.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{82C82742-B20F-1428-7F09-FC6272DF4FD9}|Assembly-CSharp.csproj|C:\\Users\\igors\\Na zaliczenie\\assets\\scripts\\gun.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{82C82742-B20F-1428-7F09-FC6272DF4FD9}|Assembly-CSharp.csproj|solutionrelative:assets\\scripts\\gun.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{82C82742-B20F-1428-7F09-FC6272DF4FD9}|Assembly-CSharp.csproj|c:\\users\\igors\\na zaliczenie\\assets\\scripts\\enemyhealth.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{82C82742-B20F-1428-7F09-FC6272DF4FD9}|Assembly-CSharp.csproj|solutionrelative:assets\\scripts\\enemyhealth.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{82C82742-B20F-1428-7F09-FC6272DF4FD9}|Assembly-CSharp.csproj|C:\\Users\\igors\\Na zaliczenie\\assets\\scripts\\spawnbullet.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{82C82742-B20F-1428-7F09-FC6272DF4FD9}|Assembly-CSharp.csproj|solutionrelative:assets\\scripts\\spawnbullet.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+    }
+  ],
+  "DocumentGroupContainers": [
+    {
+      "Orientation": 0,
+      "VerticalTabListWidth": 256,
+      "DocumentGroups": [
+        {
+          "DockedWidth": 200,
+          "SelectedChildIndex": 2,
+          "Children": [
+            {
+              "$type": "Document",
+              "DocumentIndex": 2,
+              "Title": "Gun.cs",
+              "DocumentMoniker": "C:\\Users\\igors\\Na zaliczenie\\Assets\\Scripts\\Gun.cs",
+              "RelativeDocumentMoniker": "Assets\\Scripts\\Gun.cs",
+              "ToolTip": "C:\\Users\\igors\\Na zaliczenie\\Assets\\Scripts\\Gun.cs",
+              "RelativeToolTip": "Assets\\Scripts\\Gun.cs",
+              "ViewState": "AgIAAJEAAAAAAAAAAAAUwK0AAAABAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
+              "WhenOpened": "2025-11-16T15:55:36.203Z",
+              "IsPinned": true,
+              "EditorCaption": ""
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 3,
+              "Title": "EnemyHealth.cs",
+              "DocumentMoniker": "C:\\Users\\igors\\Na zaliczenie\\Assets\\Scripts\\EnemyHealth.cs",
+              "RelativeDocumentMoniker": "Assets\\Scripts\\EnemyHealth.cs",
+              "ToolTip": "C:\\Users\\igors\\Na zaliczenie\\Assets\\Scripts\\EnemyHealth.cs",
+              "RelativeToolTip": "Assets\\Scripts\\EnemyHealth.cs",
+              "ViewState": "AgIAABUAAAAAAAAAAAAYwD4AAAABAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
+              "WhenOpened": "2025-11-16T18:44:44.474Z",
+              "EditorCaption": ""
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 0,
+              "Title": "PlayerAction.cs",
+              "DocumentMoniker": "C:\\Users\\igors\\Na zaliczenie\\Assets\\Scripts\\PlayerAction.cs",
+              "RelativeDocumentMoniker": "Assets\\Scripts\\PlayerAction.cs",
+              "ToolTip": "C:\\Users\\igors\\Na zaliczenie\\Assets\\Scripts\\PlayerAction.cs",
+              "RelativeToolTip": "Assets\\Scripts\\PlayerAction.cs",
+              "ViewState": "AgIAAHwAAAAAAAAAAAAjwJYAAAAFAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
+              "WhenOpened": "2025-11-16T17:09:02.107Z",
+              "EditorCaption": ""
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 1,
+              "Title": "shotgun.cs",
+              "DocumentMoniker": "C:\\Users\\igors\\Na zaliczenie\\Assets\\Scripts\\shotgun.cs",
+              "RelativeDocumentMoniker": "Assets\\Scripts\\shotgun.cs",
+              "ToolTip": "C:\\Users\\igors\\Na zaliczenie\\Assets\\Scripts\\shotgun.cs",
+              "RelativeToolTip": "Assets\\Scripts\\shotgun.cs",
+              "ViewState": "AgIAAIoAAAAAAAAAAAAUwLUAAAABAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
+              "WhenOpened": "2025-11-16T17:07:57.86Z",
+              "EditorCaption": ""
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 4,
+              "Title": "SpawnBullet.cs",
+              "DocumentMoniker": "C:\\Users\\igors\\Na zaliczenie\\Assets\\Scripts\\SpawnBullet.cs",
+              "RelativeDocumentMoniker": "Assets\\Scripts\\SpawnBullet.cs",
+              "ToolTip": "C:\\Users\\igors\\Na zaliczenie\\Assets\\Scripts\\SpawnBullet.cs",
+              "RelativeToolTip": "Assets\\Scripts\\SpawnBullet.cs",
+              "ViewState": "AgIAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
+              "WhenOpened": "2025-11-16T17:07:51.419Z",
+              "EditorCaption": ""
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
