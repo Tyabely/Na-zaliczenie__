@@ -16,6 +16,7 @@ public class Shotgun : MonoBehaviour
     [SerializeField] private LayerMask mask = -1;
     [SerializeField] private float bulletSpeed = 100;
     [SerializeField] private int pelletCount = 6;
+    [SerializeField] private int damagePerPellet = 1; // NOWA ZMIENNA - obra¿enia na pocisk
 
     [Header("Visual Effects")]
     [SerializeField] private ParticleSystem shootingSystem;
@@ -103,7 +104,7 @@ public class Shotgun : MonoBehaviour
                         EnemyHealth enemyHealth = hit.collider.GetComponent<EnemyHealth>();
                         if (enemyHealth != null)
                         {
-                            enemyHealth.TakeDamage(1);
+                            enemyHealth.TakeDamage(damagePerPellet); // U¯YJ ZMIENNEJ damagePerPellet
                         }
                     }
                 }
@@ -178,5 +179,17 @@ public class Shotgun : MonoBehaviour
     {
         if (BulletsText != null)
             BulletsText.text = BulletCount.ToString() + " / " + MaxBullets.ToString();
+    }
+
+    // METODA DO ZMIANY OBRA¯EÑ (mo¿na wywo³aæ z innych skryptów)
+    public void SetDamage(int newDamage)
+    {
+        damagePerPellet = newDamage;
+    }
+
+    // METODA DO ZWIÊKSZANIA OBRA¯EÑ
+    public void IncreaseDamage(int damageIncrease)
+    {
+        damagePerPellet += damageIncrease;
     }
 }
