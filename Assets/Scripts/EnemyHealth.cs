@@ -1,22 +1,20 @@
 using UnityEngine;
-using System.Collections;
+using System;
 
 public class EnemyHealth : MonoBehaviour
 {
     [Header("Health Settings")]
-    [SerializeField] public int maxHealth = 3;
-    [SerializeField] public int currentHealth;
+    public int maxHealth = 100;
+    public int currentHealth;
 
-    [Header("Effects")]
-    [SerializeField] private ParticleSystem deathEffect;
-    [SerializeField] private AudioClip deathSound;
-    [SerializeField] private AudioClip hurtSound;
+    // DODAJ TÊ LINIÊ - zdarzenie œmierci przeciwnika
+    public event Action OnEnemyDeath;
 
-    // Publiczne w³aœciwoœci do dostêpu z innych skryptów
-    public int MaxHealth => maxHealth;
-    public int CurrentHealth => currentHealth;
+    [Header("Visual Effects")]
+    public GameObject deathEffect;
+    public AudioClip deathSound;
 
-    private void Start()
+    void Start()
     {
         currentHealth = maxHealth;
     }
@@ -24,66 +22,37 @@ public class EnemyHealth : MonoBehaviour
     public void TakeDamage(int damage)
     {
         currentHealth -= damage;
-        Debug.Log($"Enemy hit! Health: {currentHealth}/{maxHealth}");
 
-        // Odtwórz dŸwiêk otrzymania obra¿eñ
-        if (hurtSound != null)
-        {
-            PlaySound(hurtSound);
-        }
-
-        // SprawdŸ czy enemy umar³
         if (currentHealth <= 0)
         {
             Die();
         }
     }
 
-    public void Die()
+    void Die()
     {
-        Debug.Log("Enemy died!");
+        // Wywo³aj zdarzenie œmierci PRZED zniszczeniem obiektu
+        OnEnemyDeath?.Invoke();
 
         // Efekt œmierci
-        if (deathEffect != null)
+       /* if (deathEffect != null)
         {
-            Instantiate(deathEffect, transform.position, Quaternion.identity);
+            Instantiate(deathEffect, transform.position, transform.rotation);
         }
 
         // DŸwiêk œmierci
         if (deathSound != null)
         {
-            PlaySound(deathSound);
+            AudioSource.PlayClipAtPoint(deathSound, transform.position);
         }
-
-        // Zniszcz enemy
+*/
+        // Zniszcz obiekt
         Destroy(gameObject);
     }
 
-    // Metoda do odtwarzania dŸwiêków
-    private void PlaySound(AudioClip clip)
+    // Metoda pomocnicza do sprawdzenia czy przeciwnik ¿yje
+    public bool IsAlive()
     {
-        GameObject soundObject = new GameObject("EnemySound");
-        AudioSource audioSource = soundObject.AddComponent<AudioSource>();
-        audioSource.clip = clip;
-        audioSource.volume = 0.7f;
-        audioSource.Play();
-        Destroy(soundObject, clip.length);
-    }
-
-    // Metoda do leczenia
-    public void Heal(int healAmount)
-    {
-        currentHealth = Mathf.Min(currentHealth + healAmount, maxHealth);
-        Debug.Log($"Enemy healed! Health: {currentHealth}/{maxHealth}");
-    }
-
-    // Metoda do ustawienia maksymalnego zdrowia
-    public void SetMaxHealth(int newMaxHealth)
-    {
-        maxHealth = newMaxHealth;
-        if (currentHealth > maxHealth)
-        {
-            currentHealth = maxHealth;
-        }
+        return currentHealth > 0;
     }
 }
