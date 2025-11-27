@@ -4,18 +4,18 @@ using UnityEngine;
 using UnityEngine.UI;
 
 [RequireComponent(typeof(Animator))]
-public class Gun : MonoBehaviour
+public class Rifle : MonoBehaviour
 {
     [Header("Audio")]
     [SerializeField] private AudioSource gunSound;
 
     [Header("Shooting Settings")]
     [SerializeField] private bool addBulletSpread = true;
-    [SerializeField] private Vector3 bulletSpreadVariance = new Vector3(0.1f, 0.1f, 0.1f);
-    [SerializeField] private float shootDelay = 0.5f;
+    [SerializeField] private Vector3 bulletSpreadVariance = new Vector3(0.05f, 0.05f, 0.05f);
+    [SerializeField] private float shootDelay = 0.15f;
     [SerializeField] private LayerMask mask = -1;
-    [SerializeField] private float bulletSpeed = 100;
-    [SerializeField] private int damagePerBullet = 1;
+    [SerializeField] private float bulletSpeed = 150;
+    [SerializeField] private int damagePerBullet = 15;
 
     [Header("Visual Effects")]
     [SerializeField] private ParticleSystem shootingSystem;
@@ -29,7 +29,7 @@ public class Gun : MonoBehaviour
 
     [Header("Ammo")]
     public int BulletCount;
-    public int MaxBullets = 12;
+    public int MaxBullets = 30;
     public TextMeshProUGUI BulletsText;
     public GameObject BulletCounter;
 
@@ -38,26 +38,26 @@ public class Gun : MonoBehaviour
     [SerializeField] private Vector3 originalLocalPosition;
     [SerializeField] private bool useOriginalPosition = true;
 
-    [Header("Model Rotation Fix")]
-    [SerializeField] private Vector3 modelRotationOffset = new Vector3(0f, 0f, 0f);
-    [SerializeField] private bool fixModelRotation = true;
+    [Header("Rifle Specific Settings")]
+    [SerializeField] private bool automaticFire = true;
+    [SerializeField] private float reloadTime = 2.0f;
+    [SerializeField] private AudioClip reloadSound;
 
     // Prywatne zmienne
     private Animator animator;
     private float lastShootTime;
     private bool canShoot;
+    private bool isReloading;
 
     private void Start()
     {
         BulletCount = MaxBullets;
         canShoot = true;
+        isReloading = false;
         UpdateAmmoUI();
 
         if (hitmarkerImage != null)
             hitmarkerImage.enabled = false;
-
-        // Zastosuj poprawkê rotacji modelu na starcie
-        ApplyModelRotationFix();
     }
 
     private void Awake()
@@ -67,57 +67,70 @@ public class Gun : MonoBehaviour
 
     private void Update()
     {
-        if (Input.GetKeyDown(KeyCode.R))
+        HandleInput();
+        UpdateAmmoUI();
+        FollowCamera();
+    }
+
+    private void HandleInput()
+    {
+        // Prze³adowanie
+        if (Input.GetKeyDown(KeyCode.R) && !isReloading && BulletCount < MaxBullets)
         {
-            BulletCount = MaxBullets;
-            UpdateAmmoUI();
+            StartCoroutine(Reload());
         }
 
+        // Strzelanie
+        if (automaticFire)
+        {
+            if (Input.GetMouseButton(0) && canShoot && !isReloading)
+            {
+                Shoot();
+            }
+        }
+        else
+        {
+            if (Input.GetMouseButtonDown(0) && canShoot && !isReloading)
+            {
+                Shoot();
+            }
+        }
+
+        // Sprawdzenie amunicji
         if (BulletCount <= 0)
         {
             BulletCount = 0;
             canShoot = false;
+
+            // Automatyczne prze³adowanie gdy skoñczy siê amunicja
+            if (!isReloading)
+            {
+                StartCoroutine(Reload());
+            }
         }
         else
         {
             canShoot = true;
         }
-
-        UpdateAmmoUI();
-        FollowCamera();
     }
 
     private void FollowCamera()
     {
         if (cameraTransform != null)
         {
-            // Ustaw pozycjê i rotacjê na kamerze, zachowuj¹c oryginaln¹ pozycjê lokaln¹
             transform.position = cameraTransform.position;
             transform.rotation = cameraTransform.rotation;
 
-            // Zachowaj oryginaln¹ pozycjê lokaln¹ wzglêdem kamery
             if (useOriginalPosition)
             {
                 transform.localPosition = originalLocalPosition;
             }
-
-            // Zastosuj poprawkê rotacji modelu
-            if (fixModelRotation)
-            {
-                ApplyModelRotationFix();
-            }
         }
-    }
-
-    private void ApplyModelRotationFix()
-    {
-        // Dodaj offset rotacji do poprawienia orientacji modelu z Blendera
-        transform.localRotation *= Quaternion.Euler(modelRotationOffset);
     }
 
     public void Shoot()
     {
-        if (lastShootTime + shootDelay < Time.time && canShoot)
+        if (lastShootTime + shootDelay < Time.time && canShoot && !isReloading)
         {
             BulletCount--;
             UpdateAmmoUI();
@@ -125,6 +138,10 @@ public class Gun : MonoBehaviour
             // Odtwórz dŸwiêk strza³u
             if (gunSound != null)
                 gunSound.Play();
+
+            // Animacja strza³u
+            if (animator != null)
+                animator.SetTrigger("Shoot");
 
             shootingSystem.Play();
             Vector3 direction = GetDirection();
@@ -153,6 +170,29 @@ public class Gun : MonoBehaviour
 
             lastShootTime = Time.time;
         }
+    }
+
+    private IEnumerator Reload()
+    {
+        isReloading = true;
+        canShoot = false;
+
+        // Odtwórz dŸwiêk prze³adowania
+        if (reloadSound != null && gunSound != null)
+        {
+            gunSound.PlayOneShot(reloadSound);
+        }
+
+        // Animacja prze³adowania
+        if (animator != null)
+            animator.SetTrigger("Reload");
+
+        yield return new WaitForSeconds(reloadTime);
+
+        BulletCount = MaxBullets;
+        isReloading = false;
+        canShoot = true;
+        UpdateAmmoUI();
     }
 
     private Vector3 GetDirection()
@@ -232,7 +272,6 @@ public class Gun : MonoBehaviour
         cameraTransform = newCamera;
     }
 
-    // Metoda do zresetowania pozycji do oryginalnej
     public void ResetToOriginalPosition()
     {
         if (cameraTransform != null)
@@ -240,36 +279,22 @@ public class Gun : MonoBehaviour
             transform.position = cameraTransform.position;
             transform.rotation = cameraTransform.rotation;
             transform.localPosition = originalLocalPosition;
-
-            // Zastosuj poprawkê rotacji po resecie
-            if (fixModelRotation)
-            {
-                ApplyModelRotationFix();
-            }
         }
     }
 
-    // Metody do kontroli rotacji modelu
-    public void SetModelRotationOffset(Vector3 newOffset)
+    // Metody specyficzne dla karabinu
+    public void SetAutomaticFire(bool automatic)
     {
-        modelRotationOffset = newOffset;
-        ApplyModelRotationFix();
+        automaticFire = automatic;
     }
 
-    public void SetFixModelRotation(bool enable)
+    public void SetReloadTime(float time)
     {
-        fixModelRotation = enable;
-        if (enable)
-        {
-            ApplyModelRotationFix();
-        }
+        reloadTime = time;
     }
 
-    // Metoda do automatycznego znalezienia poprawnej rotacji
-    public void AutoFixModelRotation()
+    public bool IsReloading()
     {
-        // Próba automatycznej korekty typowych problemów z Blenderem
-        modelRotationOffset = new Vector3(0f, -90f, 0f); // Typowa korekta dla modeli z Blendera
-        ApplyModelRotationFix();
+        return isReloading;
     }
 }

@@ -1,41 +1,51 @@
-using UnityEngine;
+Ôªøusing UnityEngine;
 using System.Collections;
 
 public class PlayerAction : MonoBehaviour
 {
-    [SerializeField]
-    private Gun gun;
-    [SerializeField]
-    private Shotgun shotgun;
+    [Header("Weapon References")]
+    [SerializeField] private Rifle rifle;
+    [SerializeField] private Gun gun;
+    [SerializeField] private Shotgun shotgun;
+    [SerializeField] private Camera playerCamera;
+
+    [Header("UI Objects")]
+    public GameObject RiflePng;
+    public GameObject Rifle; // DODANO: Referencja do obiektu karabinu
     public GameObject reloadpng;
     public GameObject Gun;
     public GameObject Shotgun;
     public GameObject GunPng;
     public GameObject ShotgunPng;
 
-    // AudioClips tylko dla broni
-    [SerializeField]
-    private AudioClip gunShotClip;
-    [SerializeField]
-    private AudioClip shotgunShotClip;
-    [SerializeField]
-    private AudioClip gunReloadClip;    // DüwiÍk prze≥adowania pistoletu
-    [SerializeField]
-    private AudioClip shotgunReloadClip; // DüwiÍk prze≥adowania strzelby
+    [Header("Weapon Audio Clips")]
+    [SerializeField] private AudioClip gunShotClip;
+    [SerializeField] private AudioClip shotgunShotClip;
+    [SerializeField] private AudioClip rifleShotClip; // DODANO: D≈∫wiƒôk karabinu
+    [SerializeField] private AudioClip gunReloadClip;
+    [SerializeField] private AudioClip shotgunReloadClip;
+    [SerializeField] private AudioClip rifleReloadClip; // DODANO: D≈∫wiƒôk prze≈Çadowania karabinu
 
+    [Header("Shooting Settings")]
     private bool canShoot = true;
     private float shootDelay = 0.5f;
 
-    // Zmienne do prze≥adowania
+    [Header("Reload Settings")]
     private bool isReloading = false;
     private float currentReloadTime = 0f;
-    private float gunReloadTime = 3.0f;    // 3 sekundy dla pistoletu
-    private float shotgunReloadTime = 5.0f; // 5 sekund dla strzelby
+    private float gunReloadTime = 3.0f;
+    private float shotgunReloadTime = 5.0f;
+    private float rifleReloadTime = 2.5f; // DODANO: Czas prze≈Çadowania karabinu
     private float currentReloadDuration;
     private GameObject currentReloadSoundObject;
 
     void Start()
     {
+        // Znajd≈∫ komponenty broni je≈õli nie sƒÖ przypisane
+        if (rifle == null) // DODANO: Szukaj karabinu
+        {
+            rifle = GetComponentInChildren<Rifle>(true);
+        }
         if (shotgun == null)
         {
             shotgun = GetComponentInChildren<Shotgun>(true);
@@ -44,86 +54,138 @@ public class PlayerAction : MonoBehaviour
         {
             gun = GetComponentInChildren<Gun>(true);
         }
+
+        // Znajd≈∫ kamerƒô je≈õli nie jest przypisana
+        if (playerCamera == null)
+        {
+            playerCamera = Camera.main;
+            if (playerCamera == null)
+            {
+                playerCamera = Object.FindAnyObjectByType<Camera>();
+            }
+        }
+
+        // Przeka≈º referencjƒô kamery do broni
+        if (gun != null && playerCamera != null)
+            gun.SetCamera(playerCamera.transform);
+        if (shotgun != null && playerCamera != null)
+            shotgun.SetCamera(playerCamera.transform);
+        if (rifle != null && playerCamera != null) // DODANO: Dla karabinu
+            rifle.SetCamera(playerCamera.transform);
+
+        // Ukryj reload UI na starcie
+        if (reloadpng != null)
+            reloadpng.SetActive(false);
     }
 
-    public void Update()
+    void Update()
+    {
+        // Prze≈ÇƒÖczanie broni (1 - pistolet, 2 - strzelba, 3 - karabin)
+        HandleWeaponSwitching();
+
+        // Prze≈Çadowanie po wci≈õniƒôciu R
+        if (UnityEngine.Input.GetKeyDown(KeyCode.R) && !isReloading)
+        {
+            StartReload();
+        }
+
+        // Obs≈Çuga prze≈Çadowania z deltaTime
+        HandleReloadWithDeltaTime();
+    }
+
+    private void HandleWeaponSwitching()
     {
         if (UnityEngine.Input.GetKeyDown(UnityEngine.KeyCode.Alpha1))
         {
             if (!isReloading)
             {
-                Gun.SetActive(true);
-                GunPng.SetActive(true);
-                ShotgunPng.SetActive(false);
-                Shotgun.SetActive(false);
+                SetActiveWeapon(1); // Pistolet
             }
         }
         else if (UnityEngine.Input.GetKeyDown(UnityEngine.KeyCode.Alpha2))
         {
             if (!isReloading)
             {
-                Shotgun.SetActive(true);
-                ShotgunPng.SetActive(true);
-                GunPng.SetActive(false);
-                Gun.SetActive(false);
+                SetActiveWeapon(2); // Strzelba
             }
         }
-
-        // Prze≥adowanie po wciúniÍciu R - ZMIENIONE: zawsze wywo≥uje siÍ po klikniÍciu R
-        if (UnityEngine.Input.GetKeyDown(KeyCode.R) && !isReloading)
+        else if (UnityEngine.Input.GetKeyDown(UnityEngine.KeyCode.Alpha3))
         {
-            StartReload();
+            if (!isReloading)
+            {
+                SetActiveWeapon(3); // Karabin
+            }
         }
+    }
 
-        // Obs≥uga prze≥adowania z deltaTime
-        HandleReloadWithDeltaTime();
+    private void SetActiveWeapon(int weaponType)
+    {
+        // 1 = pistolet, 2 = strzelba, 3 = karabin
+        Gun.SetActive(weaponType == 1);
+        GunPng.SetActive(weaponType == 1);
+        Shotgun.SetActive(weaponType == 2);
+        ShotgunPng.SetActive(weaponType == 2);
+        Rifle.SetActive(weaponType == 3); // DODANO: Aktywacja karabinu
+        RiflePng.SetActive(weaponType == 3);
     }
 
     public void OnShoot()
     {
-        if (!canShoot || isReloading) return; // Blokada podczas prze≥adowania
+        if (!canShoot || isReloading) return;
 
         if (Gun.activeInHierarchy)
         {
-            // Pobierz aktualnπ amunicjÍ z pistoletu
-            int currentGunAmmo = GetGunAmmo();
-
-            if (currentGunAmmo > 0)
-            {
-                gun.Shoot();
-                CreateGunSound();
-                StartCoroutine(ShootDelay());
-
-                if (GetGunAmmo() <= 0)
-                {
-                    Debug.Log("Pistolet: brak amunicji!");
-                }
-            }
-            else
-            {
-                Debug.Log("Pistolet: pusty magazynek!");
-            }
+            HandleGunShoot();
         }
         else if (Shotgun.activeInHierarchy)
         {
-            if (shotgun != null)
-            {
-                // Pobierz aktualnπ amunicjÍ ze strzelby
-                int currentShotgunAmmo = GetShotgunAmmo();
+            HandleShotgunShoot();
+        }
+        else if (Rifle.activeInHierarchy) // DODANO: Strzelanie z karabinu
+        {
+            HandleRifleShoot();
+        }
+    }
 
-                if (currentShotgunAmmo > 0)
-                {
-                    StartCoroutine(ShootShotgunBurst());
-                }
-                else
-                {
-                    Debug.Log("Strzelba: brak amunicji!");
-                }
+    private void HandleGunShoot()
+    {
+        int currentGunAmmo = GetGunAmmo();
+
+        if (currentGunAmmo > 0)
+        {
+            gun.Shoot();
+            CreateGunSound();
+            StartCoroutine(ShootDelay());
+
+            if (GetGunAmmo() <= 0)
+            {
+               // Debug.Log("Pistolet: brak amunicji!");
+            }
+        }
+        else
+        {
+          //  Debug.Log("Pistolet: pusty magazynek!");
+        }
+    }
+
+    private void HandleShotgunShoot()
+    {
+        if (shotgun != null)
+        {
+            int currentShotgunAmmo = GetShotgunAmmo();
+
+            if (currentShotgunAmmo > 0)
+            {
+                StartCoroutine(ShootShotgunBurst());
             }
             else
             {
-                Debug.LogError("Shotgun reference is null!");
+              //  Debug.Log("Strzelba: brak amunicji!");
             }
+        }
+        else
+        {
+          //  Debug.LogError("Shotgun reference is null!");
         }
     }
 
@@ -133,21 +195,41 @@ public class PlayerAction : MonoBehaviour
 
         canShoot = false;
 
-        // Strzelba strzela seriπ (3 pociski na raz)
+        // Strzelba strzela seriƒÖ (3 pociski na raz)
         for (int i = 0; i < 3; i++)
         {
-            shotgun.Shoot(); // DüwiÍk jest teraz odtwarzany wewnπtrz metody Shoot() strzelby
-                             // USU—: CreateShotgunSound(); - düwiÍk jest juø odtwarzany w shotgun.Shoot()
+            shotgun.Shoot();
             yield return new WaitForSeconds(0.1f);
         }
 
         if (GetShotgunAmmo() <= 0)
         {
-            Debug.Log("Strzelba: brak amunicji!");
+           // Debug.Log("Strzelba: brak amunicji!");
         }
 
         yield return new WaitForSeconds(shootDelay);
         canShoot = true;
+    }
+
+    private void HandleRifleShoot() // DODANO: Metoda strzelania karabinem
+    {
+        int currentRifleAmmo = GetRifleAmmo();
+
+        if (currentRifleAmmo > 0)
+        {
+            rifle.Shoot();
+            CreateRifleSound();
+            StartCoroutine(ShootDelay());
+
+            if (GetRifleAmmo() <= 0)
+            {
+              //  Debug.Log("Karabin: brak amunicji!");
+            }
+        }
+        else
+        {
+          //  Debug.Log("Karabin: pusty magazynek!");
+        }
     }
 
     private IEnumerator ShootDelay()
@@ -157,25 +239,24 @@ public class PlayerAction : MonoBehaviour
         canShoot = true;
     }
 
-    // Obs≥uga prze≥adowania z deltaTime
     private void HandleReloadWithDeltaTime()
     {
         if (isReloading)
         {
             currentReloadTime += Time.deltaTime;
 
-            // Aktualizuj postÍp w konsoli
+            // Aktualizuj postƒôp w konsoli
             float progress = currentReloadTime / currentReloadDuration;
             UpdateReloadUI(progress);
 
-            // Sprawdü czy prze≥adowanie zakoÒczone
+            // Sprawd≈∫ czy prze≈Çadowanie zako≈Ñczone
             if (currentReloadTime >= currentReloadDuration)
             {
                 CompleteReload();
                 isReloading = false;
                 currentReloadTime = 0f;
 
-                // Zatrzymaj düwiÍk prze≥adowania
+                // Zatrzymaj d≈∫wiƒôk prze≈Çadowania
                 if (currentReloadSoundObject != null)
                 {
                     Destroy(currentReloadSoundObject);
@@ -187,60 +268,75 @@ public class PlayerAction : MonoBehaviour
 
     private void StartReload()
     {
-        reloadpng.SetActive(true);
+        if (reloadpng != null)
+            reloadpng.SetActive(true);
+
         isReloading = true;
         currentReloadTime = 0f;
 
-        // Ustaw odpowiedni czas prze≥adowania w zaleønoúci od aktywnej broni
+        // Ustaw odpowiedni czas prze≈Çadowania w zale≈ºno≈õci od aktywnej broni
         if (Gun.activeInHierarchy)
         {
             currentReloadDuration = gunReloadTime;
-            Debug.Log("RozpoczÍto prze≥adowanie pistoletu (3s)...");
+           // Debug.Log("Rozpoczƒôto prze≈Çadowanie pistoletu (3s)...");
             PlayGunReloadSound();
         }
         else if (Shotgun.activeInHierarchy)
         {
             currentReloadDuration = shotgunReloadTime;
-            Debug.Log("RozpoczÍto prze≥adowanie strzelby (5s)...");
+           // Debug.Log("Rozpoczƒôto prze≈Çadowanie strzelby (5s)...");
             PlayShotgunReloadSound();
+        }
+        else if (Rifle.activeInHierarchy) // DODANO: Prze≈Çadowanie karabinu
+        {
+            currentReloadDuration = rifleReloadTime;
+           // Debug.Log("Rozpoczƒôto prze≈Çadowanie karabinu (2.5s)...");
+            PlayRifleReloadSound();
         }
         else
         {
-            // Jeúli øadna broÒ nie jest aktywna, prze≥aduj domyúlnie pistolet
+            // Je≈õli ≈ºadna bro≈Ñ nie jest aktywna, prze≈Çaduj domy≈õlnie pistolet
             currentReloadDuration = gunReloadTime;
-            Debug.Log("RozpoczÍto prze≥adowanie (3s)...");
+           // Debug.Log("Rozpoczƒôto prze≈Çadowanie (3s)...");
             PlayGunReloadSound();
         }
     }
 
     private void CompleteReload()
     {
-        reloadpng.SetActive(false);
-        // Prze≥aduj obie bronie
-        if (gun != null)
+        if (reloadpng != null)
+            reloadpng.SetActive(false);
+
+        // Prze≈Çaduj odpowiedniƒÖ bro≈Ñ
+        if (Gun.activeInHierarchy && gun != null)
         {
             gun.BulletCount = gun.MaxBullets;
             if (gun.BulletsText != null)
                 gun.BulletsText.text = gun.BulletCount.ToString() + " / " + gun.MaxBullets.ToString();
         }
-
-        if (shotgun != null)
+        else if (Shotgun.activeInHierarchy && shotgun != null)
         {
             shotgun.BulletCount = shotgun.MaxBullets;
             if (shotgun.BulletsText != null)
                 shotgun.BulletsText.text = shotgun.BulletCount.ToString() + " / " + shotgun.MaxBullets.ToString();
         }
+        else if (Rifle.activeInHierarchy && rifle != null) // DODANO: Prze≈Çadowanie karabinu
+        {
+            // U≈ºyj metody Reload z karabinu je≈õli istnieje, lub ustaw bezpo≈õrednio
+            rifle.BulletCount = rifle.MaxBullets;
+            if (rifle.BulletsText != null)
+                rifle.BulletsText.text = rifle.BulletCount.ToString() + " / " + rifle.MaxBullets.ToString();
+        }
 
-        Debug.Log("Prze≥adowano broÒ!");
+        //Debug.Log("Prze≈Çadowano bro≈Ñ!");
     }
 
     private void UpdateReloadUI(float progress)
     {
-        // Moøesz dodaÊ pasek postÍpu w UI
-        Debug.Log($"Prze≥adowanie: {progress * 100:F1}%");
+        // Mo≈ºesz dodaƒá pasek postƒôpu w UI
+        //Debug.Log($"Prze≈Çadowanie: {progress * 100:F1}%");
     }
 
-    // DüwiÍk prze≥adowania pistoletu
     private void PlayGunReloadSound()
     {
         if (gunReloadClip != null)
@@ -256,12 +352,11 @@ public class PlayerAction : MonoBehaviour
 
             audioSource.Play();
 
-            // Zniszcz po zakoÒczeniu düwiÍku
+            // Zniszcz po zako≈Ñczeniu d≈∫wiƒôku
             Destroy(currentReloadSoundObject, gunReloadClip.length + 1f);
         }
     }
 
-    // DüwiÍk prze≥adowania strzelby
     private void PlayShotgunReloadSound()
     {
         if (shotgunReloadClip != null)
@@ -277,12 +372,35 @@ public class PlayerAction : MonoBehaviour
 
             audioSource.Play();
 
-            // Zniszcz po zakoÒczeniu düwiÍku
+            // Zniszcz po zako≈Ñczeniu d≈∫wiƒôku
             Destroy(currentReloadSoundObject, shotgunReloadClip.length + 1f);
         }
     }
 
-    // Tworzy GameObject z düwiÍkiem pistoletu
+    private void PlayRifleReloadSound() // DODANO: D≈∫wiƒôk prze≈Çadowania karabinu
+    {
+        if (rifleReloadClip != null)
+        {
+            currentReloadSoundObject = new GameObject("RifleReloadSound");
+            AudioSource audioSource = currentReloadSoundObject.AddComponent<AudioSource>();
+
+            audioSource.clip = rifleReloadClip;
+            audioSource.volume = 0.6f;
+            audioSource.pitch = 1.0f;
+            audioSource.spatialBlend = 1.0f;
+            audioSource.loop = false;
+
+            audioSource.Play();
+
+            // Zniszcz po zako≈Ñczeniu d≈∫wiƒôku
+            Destroy(currentReloadSoundObject, rifleReloadClip.length + 1f);
+        }
+        else if (gunReloadClip != null) // Fallback na d≈∫wiƒôk pistoletu
+        {
+            PlayGunReloadSound();
+        }
+    }
+
     private void CreateGunSound()
     {
         if (gunShotClip != null)
@@ -302,7 +420,29 @@ public class PlayerAction : MonoBehaviour
         }
     }
 
-    // Tworzy GameObject z düwiÍkiem strzelby
+    private void CreateRifleSound() // DODANO: D≈∫wiƒôk strza≈Çu karabinu
+    {
+        if (rifleShotClip != null)
+        {
+            GameObject soundObject = new GameObject("RifleSoundInstance");
+            AudioSource audioSource = soundObject.AddComponent<AudioSource>();
+
+            audioSource.clip = rifleShotClip;
+            audioSource.volume = 0.8f; // Nieco g≈Ço≈õniejszy ni≈º pistolet
+            audioSource.pitch = Random.Range(0.95f, 1.05f);
+            audioSource.spatialBlend = 1.0f;
+            audioSource.maxDistance = 50f;
+            audioSource.rolloffMode = AudioRolloffMode.Logarithmic;
+
+            audioSource.Play();
+            Destroy(soundObject, rifleShotClip.length + 0.1f);
+        }
+        else if (gunShotClip != null) // Fallback na d≈∫wiƒôk pistoletu
+        {
+            CreateGunSound();
+        }
+    }
+
     private void CreateShotgunSound()
     {
         if (shotgunShotClip != null)
@@ -322,7 +462,6 @@ public class PlayerAction : MonoBehaviour
         }
     }
 
-    // Metody do pobierania amunicji z broni
     private int GetGunAmmo()
     {
         if (gun != null) return gun.BulletCount;
@@ -335,9 +474,28 @@ public class PlayerAction : MonoBehaviour
         return 0;
     }
 
+    private int GetRifleAmmo() // DODANO: Pobieranie amunicji karabinu
+    {
+        if (rifle != null) return rifle.BulletCount;
+        return 0;
+    }
+
     // Czyszczenie
     private void OnDestroy()
     {
-        if (currentReloadSoundObject != null) Destroy(currentReloadSoundObject);
+        if (currentReloadSoundObject != null)
+            Destroy(currentReloadSoundObject);
+    }
+
+    // Metoda do sprawdzenia czy mo≈ºna strzelaƒá (dla innych skrypt√≥w)
+    public bool CanShoot()
+    {
+        return canShoot && !isReloading;
+    }
+
+    // Metoda do sprawdzenia czy trwa prze≈Çadowanie (dla innych skrypt√≥w)
+    public bool IsReloading()
+    {
+        return isReloading;
     }
 }

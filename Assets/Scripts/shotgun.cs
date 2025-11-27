@@ -16,7 +16,7 @@ public class Shotgun : MonoBehaviour
     [SerializeField] private LayerMask mask = -1;
     [SerializeField] private float bulletSpeed = 100;
     [SerializeField] private int pelletCount = 6;
-    [SerializeField] private int damagePerPellet = 1; // NOWA ZMIENNA - obraøenia na pocisk
+    [SerializeField] private int damagePerPellet = 1;
 
     [Header("Visual Effects")]
     [SerializeField] private ParticleSystem shootingSystem;
@@ -34,6 +34,11 @@ public class Shotgun : MonoBehaviour
     public TextMeshProUGUI BulletsText;
     public GameObject BulletCounter;
 
+    [Header("Camera Follow")]
+    [SerializeField] private Transform cameraTransform;
+    [SerializeField] private Vector3 originalLocalPosition; // Zachowaj oryginalnπ pozycjÍ
+    [SerializeField] private bool useOriginalPosition = true;
+
     // Prywatne zmienne
     private Animator animator;
     private float lastShootTime;
@@ -47,6 +52,17 @@ public class Shotgun : MonoBehaviour
 
         if (hitmarkerImage != null)
             hitmarkerImage.enabled = false;
+
+        if (cameraTransform == null)
+        {
+            cameraTransform = Camera.main.transform;
+        }
+
+        // Zachowaj oryginalnπ pozycjÍ lokalnπ
+        if (useOriginalPosition)
+        {
+            originalLocalPosition = transform.localPosition;
+        }
     }
 
     private void Awake()
@@ -73,6 +89,23 @@ public class Shotgun : MonoBehaviour
         }
 
         UpdateAmmoUI();
+        FollowCamera();
+    }
+
+    private void FollowCamera()
+    {
+        if (cameraTransform != null)
+        {
+            // Ustaw pozycjÍ i rotacjÍ na kamerze, zachowujπc oryginalnπ pozycjÍ lokalnπ
+            transform.position = cameraTransform.position;
+            transform.rotation = cameraTransform.rotation;
+
+            // Zachowaj oryginalnπ pozycjÍ lokalnπ wzglÍdem kamery
+            if (useOriginalPosition)
+            {
+                transform.localPosition = originalLocalPosition;
+            }
+        }
     }
 
     public void Shoot()
@@ -82,13 +115,11 @@ public class Shotgun : MonoBehaviour
             BulletCount--;
             UpdateAmmoUI();
 
-            // DèWI K TYLKO RAZ NA STRZA£ - PRZED P TL•
             if (shotgunSound != null)
                 shotgunSound.Play();
 
             shootingSystem.Play();
 
-            // Strzelba strzela wieloma pociskami, ale düwiÍk gra tylko raz
             for (int i = 0; i < pelletCount; i++)
             {
                 Vector3 direction = GetDirection();
@@ -104,7 +135,7 @@ public class Shotgun : MonoBehaviour
                         EnemyHealth enemyHealth = hit.collider.GetComponent<EnemyHealth>();
                         if (enemyHealth != null)
                         {
-                            enemyHealth.TakeDamage(damagePerPellet); // UØYJ ZMIENNEJ damagePerPellet
+                            enemyHealth.TakeDamage(damagePerPellet);
                         }
                     }
                 }
@@ -181,15 +212,29 @@ public class Shotgun : MonoBehaviour
             BulletsText.text = BulletCount.ToString() + " / " + MaxBullets.ToString();
     }
 
-    // METODA DO ZMIANY OBRAØE— (moøna wywo≥aÊ z innych skryptÛw)
     public void SetDamage(int newDamage)
     {
         damagePerPellet = newDamage;
     }
 
-    // METODA DO ZWI KSZANIA OBRAØE—
     public void IncreaseDamage(int damageIncrease)
     {
         damagePerPellet += damageIncrease;
+    }
+
+    public void SetCamera(Transform newCamera)
+    {
+        cameraTransform = newCamera;
+    }
+
+    // Metoda do zresetowania pozycji do oryginalnej
+    public void ResetToOriginalPosition()
+    {
+        if (cameraTransform != null)
+        {
+            transform.position = cameraTransform.position;
+            transform.rotation = cameraTransform.rotation;
+            transform.localPosition = originalLocalPosition;
+        }
     }
 }
