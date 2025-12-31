@@ -4954,7 +4954,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: -8679921383154817045, guid: 95d57cbd886fa8c4dab647f1ef23e56e, type: 3}
       propertyPath: m_LocalPosition.x
-      value: 0.542
+      value: 0.491
       objectReference: {fileID: 0}
     - target: {fileID: -8679921383154817045, guid: 95d57cbd886fa8c4dab647f1ef23e56e, type: 3}
       propertyPath: m_LocalPosition.y
@@ -5002,7 +5002,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 919132149155446097, guid: 95d57cbd886fa8c4dab647f1ef23e56e, type: 3}
       propertyPath: m_IsActive
-      value: 0
+      value: 1
       objectReference: {fileID: 0}
     m_RemovedComponents: []
     m_RemovedGameObjects: []
@@ -5463,7 +5463,7 @@ MonoBehaviour:
   BulletsText: {fileID: 412384352}
   BulletCounter: {fileID: 412384350}
   cameraTransform: {fileID: 1118541569}
-  originalLocalPosition: {x: 0.535, y: 0.264, z: 1.29}
+  originalLocalPosition: {x: 0.491, y: 0.264, z: 1.057}
   useOriginalPosition: 1
   automaticFire: 1
   reloadTime: 2

@@ -140,8 +140,8 @@ public class Rifle : MonoBehaviour
                 gunSound.Play();
 
             // Animacja strza³u
-            if (animator != null)
-                animator.SetTrigger("Shoot");
+            //if (animator != null)
+              //  animator.SetTrigger("Shoot");
 
             shootingSystem.Play();
             Vector3 direction = GetDirection();
