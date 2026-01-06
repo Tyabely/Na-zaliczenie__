@@ -69,10 +69,15 @@
     <Compile Include="Assets\Scripts\PlayerController.cs" />
     <Compile Include="Assets\UnityTechnologies\ParticlePack\EffectExamples\Misc Effects\Scripts\SpawnEffect.cs" />
     <Compile Include="Assets\Scripts\StaminaBar.cs" />
+<<<<<<< HEAD
     <Compile Include="Assets\enemyMovement.cs" />
     <Compile Include="Assets\UnityTechnologies\ParticlePack\Shared\Scripts\ProximityActivate.cs" />
     <Compile Include="Assets\UnityTechnologies\ParticlePack\TutorialInfo\Scripts\Readme.cs" />
     <Compile Include="Assets\CameraColliderHelper.cs" />
+=======
+    <Compile Include="Assets\UnityTechnologies\ParticlePack\Shared\Scripts\ProximityActivate.cs" />
+    <Compile Include="Assets\UnityTechnologies\ParticlePack\TutorialInfo\Scripts\Readme.cs" />
+>>>>>>> CrybabyDvlMn/igor
     <Compile Include="Assets\Scripts\ExitGame.cs" />
     <Compile Include="Assets\UnityTechnologies\ParticlePack\Shared\Ramps\Runtime\RampAsset.cs" />
     <Compile Include="Assets\Scripts\Stats.cs" />
