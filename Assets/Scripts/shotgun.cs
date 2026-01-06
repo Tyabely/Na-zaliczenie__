@@ -19,6 +19,10 @@ public class Shotgun : MonoBehaviour
     [SerializeField] private int pelletCount = 6;
     [SerializeField] private int damagePerPellet = 25;
 
+    [Header("Aiming Spread Settings")]
+    [SerializeField] private Vector3 aimSpreadVariance = new Vector3(0.05f, 0.05f, 0.05f);
+    [SerializeField] private Vector3 hipSpreadVariance = new Vector3(0.1f, 0.1f, 0.1f);
+
     public bool automaticFire = false;
 
     [Header("Aiming Settings")]
@@ -30,6 +34,31 @@ public class Shotgun : MonoBehaviour
     [SerializeField] private float hipFOV = 60f;
     private bool isAiming = false;
     private Camera weaponCamera;
+
+    [Header("Camera Collision Prevention")]
+    [SerializeField] private bool preventCameraClipping = true;
+    [SerializeField] private float minDistanceFromCamera = 0.35f;
+    [SerializeField] private float collisionSphereRadius = 0.3f;
+    [SerializeField] private LayerMask cameraCollisionMask = -1;
+    private Vector3 safeOffset;
+    private bool isCameraClipping = false;
+
+    [Header("Model Stabilization Settings - FIXED")]
+    [SerializeField] private bool stabilizeModel = true;
+    [SerializeField] private float positionSmoothTime = 0.08f;
+    [SerializeField] private float rotationSmoothTime = 0.08f;
+    [SerializeField] private float maxVelocityThreshold = 3f;
+    [SerializeField] private float velocityMultiplier = 1.5f;
+    [SerializeField] private bool useLateUpdateForStabilization = true;
+    [SerializeField] private bool useSmoothingFilter = true;
+    [SerializeField] private int smoothingBufferSize = 5;
+
+    private Vector3 lastCameraPosition;
+    private Quaternion lastCameraRotation;
+    private Vector3 positionVelocity = Vector3.zero;
+    private Quaternion smoothedRotation;
+    private Vector3[] positionBuffer;
+    private int bufferIndex = 0;
 
     [Header("Visual Effects")]
     [SerializeField] private ParticleSystem shootingSystem;
@@ -47,8 +76,9 @@ public class Shotgun : MonoBehaviour
     public TextMeshProUGUI BulletsText;
     public GameObject BulletCounter;
 
-    [Header("Camera")]
+    [Header("Camera & Player References")]
     [SerializeField] private Transform cameraTransform;
+    [SerializeField] private Transform playerTransform;
 
     private Animator animator;
     private float lastShootTime;
@@ -56,7 +86,7 @@ public class Shotgun : MonoBehaviour
     private bool isReloading = false;
     private Vector3 currentOffset;
     private Vector3 targetOffset;
-    private Vector3 velocity = Vector3.zero;
+    private Vector3 offsetVelocity = Vector3.zero;
 
     void Start()
     {
@@ -72,11 +102,20 @@ public class Shotgun : MonoBehaviour
     {
         HandleAiming();
         HandleInput();
-
-        // JEDYNA METODA POZYCJONUJ¥CA
-        UpdateWeaponPosition();
-
         UpdateAmmoUI();
+
+        if (!useLateUpdateForStabilization)
+        {
+            UpdateWeaponPosition();
+        }
+    }
+
+    private void LateUpdate()
+    {
+        if (useLateUpdateForStabilization)
+        {
+            UpdateWeaponPosition();
+        }
     }
 
     private void InitializeShotgun()
@@ -84,6 +123,17 @@ public class Shotgun : MonoBehaviour
         BulletCount = MaxBullets;
         currentOffset = hipOffset;
         targetOffset = hipOffset;
+        safeOffset = hipOffset;
+
+        // Inicjalizacja bufora wyg³adzania
+        if (useSmoothingFilter)
+        {
+            positionBuffer = new Vector3[smoothingBufferSize];
+            for (int i = 0; i < smoothingBufferSize; i++)
+            {
+                positionBuffer[i] = transform.position;
+            }
+        }
 
         if (hitmarkerImage != null)
             hitmarkerImage.enabled = false;
@@ -99,14 +149,36 @@ public class Shotgun : MonoBehaviour
             weaponCamera = cameraTransform.GetComponent<Camera>();
         }
 
+        if (playerTransform == null)
+        {
+            GameObject player = GameObject.FindGameObjectWithTag("Player");
+            if (player != null)
+            {
+                playerTransform = player.transform;
+            }
+        }
+
         if (cameraTransform != null)
         {
+            lastCameraPosition = cameraTransform.position;
+            lastCameraRotation = cameraTransform.rotation;
+
             SetInitialPosition();
+
+            if (useSmoothingFilter)
+            {
+                for (int i = 0; i < smoothingBufferSize; i++)
+                {
+                    positionBuffer[i] = CalculateDesiredPosition();
+                }
+            }
         }
     }
 
     private void SetInitialPosition()
     {
+        if (cameraTransform == null) return;
+
         Vector3 desiredPosition = cameraTransform.position +
                                  cameraTransform.right * hipOffset.x +
                                  cameraTransform.up * hipOffset.y +
@@ -114,27 +186,163 @@ public class Shotgun : MonoBehaviour
 
         transform.position = desiredPosition;
         transform.rotation = cameraTransform.rotation;
+        smoothedRotation = cameraTransform.rotation;
     }
 
     private void UpdateWeaponPosition()
     {
         if (cameraTransform == null) return;
 
+        if (preventCameraClipping)
+        {
+            CheckCameraCollision();
+        }
+
         currentOffset = Vector3.SmoothDamp(
             currentOffset,
-            targetOffset,
-            ref velocity,
+            isCameraClipping ? safeOffset : targetOffset,
+            ref offsetVelocity,
             0.1f,
             aimSpeed
         );
 
-        Vector3 desiredPosition = cameraTransform.position +
-                                 cameraTransform.right * currentOffset.x +
-                                 cameraTransform.up * currentOffset.y +
-                                 cameraTransform.forward * currentOffset.z;
+        if (stabilizeModel)
+        {
+            StabilizeWeaponPosition();
+        }
+        else
+        {
+            Vector3 desiredPosition = CalculateDesiredPosition();
+            transform.position = desiredPosition;
+            transform.rotation = cameraTransform.rotation;
+        }
+    }
 
-        transform.position = desiredPosition;
-        transform.rotation = cameraTransform.rotation;
+    private Vector3 CalculateDesiredPosition()
+    {
+        if (cameraTransform == null) return transform.position;
+
+        return cameraTransform.position +
+               cameraTransform.right * currentOffset.x +
+               cameraTransform.up * currentOffset.y +
+               cameraTransform.forward * currentOffset.z;
+    }
+
+    private void StabilizeWeaponPosition()
+    {
+        if (cameraTransform == null) return;
+
+        Vector3 cameraVelocity = (cameraTransform.position - lastCameraPosition) / Time.deltaTime;
+
+        float velocityMultiplierValue = Mathf.Clamp01(cameraVelocity.magnitude / maxVelocityThreshold);
+        velocityMultiplierValue = Mathf.Pow(velocityMultiplierValue, 1.5f);
+
+        float currentPositionSmoothTime = positionSmoothTime * (1f + velocityMultiplierValue * velocityMultiplier);
+        float currentRotationSmoothTime = rotationSmoothTime * (1f + velocityMultiplierValue * velocityMultiplier);
+
+        Vector3 targetPosition = CalculateDesiredPosition();
+
+        Vector3 smoothedTargetPosition;
+
+        if (useSmoothingFilter)
+        {
+            positionBuffer[bufferIndex] = targetPosition;
+            bufferIndex = (bufferIndex + 1) % smoothingBufferSize;
+
+            Vector3 averagePosition = Vector3.zero;
+            for (int i = 0; i < smoothingBufferSize; i++)
+            {
+                averagePosition += positionBuffer[i];
+            }
+            averagePosition /= smoothingBufferSize;
+
+            smoothedTargetPosition = averagePosition;
+        }
+        else
+        {
+            smoothedTargetPosition = targetPosition;
+        }
+
+        Vector3 currentVelocity = positionVelocity;
+        currentVelocity = Vector3.ClampMagnitude(currentVelocity, 10f);
+
+        transform.position = Vector3.SmoothDamp(
+            transform.position,
+            smoothedTargetPosition,
+            ref currentVelocity,
+            currentPositionSmoothTime,
+            Mathf.Infinity,
+            Time.deltaTime
+        );
+
+        positionVelocity = currentVelocity;
+
+        smoothedRotation = Quaternion.Slerp(
+            smoothedRotation,
+            cameraTransform.rotation,
+            Time.deltaTime / currentRotationSmoothTime
+        );
+
+        transform.rotation = smoothedRotation;
+
+        lastCameraPosition = cameraTransform.position;
+        lastCameraRotation = cameraTransform.rotation;
+    }
+
+    private void CheckCameraCollision()
+    {
+        if (cameraTransform == null) return;
+
+        Vector3 weaponPos = cameraTransform.position +
+                           cameraTransform.right * targetOffset.x +
+                           cameraTransform.up * targetOffset.y +
+                           cameraTransform.forward * targetOffset.z;
+
+        float distanceToCamera = Vector3.Distance(weaponPos, cameraTransform.position);
+        Vector3 direction = (weaponPos - cameraTransform.position).normalized;
+        float checkDistance = Mathf.Max(distanceToCamera, minDistanceFromCamera);
+
+        RaycastHit[] hits = Physics.SphereCastAll(
+            cameraTransform.position,
+            collisionSphereRadius * 1.2f,
+            direction,
+            checkDistance + 0.1f,
+            cameraCollisionMask,
+            QueryTriggerInteraction.Ignore
+        );
+
+        isCameraClipping = false;
+
+        foreach (RaycastHit hit in hits)
+        {
+            if (hit.collider.transform == transform ||
+                hit.collider.transform == cameraTransform ||
+                (playerTransform != null && hit.collider.transform.IsChildOf(playerTransform)))
+                continue;
+
+            if (hit.distance < distanceToCamera)
+            {
+                isCameraClipping = true;
+
+                float safetyMargin = 0.05f;
+                safeOffset = new Vector3(
+                    targetOffset.x,
+                    targetOffset.y,
+                    Mathf.Max(targetOffset.z, hit.distance + minDistanceFromCamera + safetyMargin)
+                );
+                break;
+            }
+        }
+
+        if (distanceToCamera < minDistanceFromCamera * 0.8f && !isCameraClipping)
+        {
+            isCameraClipping = true;
+            safeOffset = new Vector3(
+                targetOffset.x,
+                targetOffset.y,
+                minDistanceFromCamera
+            );
+        }
     }
 
     private void HandleAiming()
@@ -144,8 +352,7 @@ public class Shotgun : MonoBehaviour
         if (Input.GetMouseButtonDown(1))
         {
             isAiming = true;
-            addBulletSpread = false;
-            bulletSpreadVariance = new Vector3(0.05f, 0.05f, 0.05f);
+            addBulletSpread = true; // ZMIENIONE: bullet spread dalej aktywny
             targetOffset = aimOffset;
 
             if (weaponCamera != null)
@@ -157,7 +364,6 @@ public class Shotgun : MonoBehaviour
         {
             isAiming = false;
             addBulletSpread = true;
-            bulletSpreadVariance = new Vector3(0.1f, 0.1f, 0.1f);
             targetOffset = hipOffset;
 
             if (weaponCamera != null)
@@ -217,8 +423,6 @@ public class Shotgun : MonoBehaviour
         }
     }
 
-    // USUNIÊTA METODA FollowCamera() - powodowa³a konflikt
-
     public void Shoot()
     {
         if (Time.time - lastShootTime < shootDelay || !canShoot || isReloading || BulletCount <= 0)
@@ -274,6 +478,27 @@ public class Shotgun : MonoBehaviour
         }
     }
 
+    Vector3 GetDirection()
+    {
+        Vector3 direction = bulletSpawnPoint.forward;
+
+        if (addBulletSpread)
+        {
+            // U¿yj odpowiedniego spreadu w zale¿noœci od celowania
+            Vector3 currentSpread = isAiming ? aimSpreadVariance : hipSpreadVariance;
+
+            direction += new Vector3(
+                Random.Range(-currentSpread.x, currentSpread.x),
+                Random.Range(-currentSpread.y, currentSpread.y),
+                Random.Range(-currentSpread.z, currentSpread.z)
+            );
+            direction.Normalize();
+        }
+
+        return direction;
+    }
+
+    // RESZTA METOD BEZ ZMIAN...
     IEnumerator Reload()
     {
         isReloading = true;
@@ -293,24 +518,6 @@ public class Shotgun : MonoBehaviour
         isReloading = false;
         canShoot = true;
         UpdateAmmoUI();
-    }
-
-    Vector3 GetDirection()
-    {
-        Vector3 direction = bulletSpawnPoint.forward;
-
-        if (addBulletSpread)
-        {
-            float spreadMultiplier = isAiming ? 0.5f : 1f;
-            direction += new Vector3(
-                Random.Range(-bulletSpreadVariance.x, bulletSpreadVariance.x) * spreadMultiplier,
-                Random.Range(-bulletSpreadVariance.y, bulletSpreadVariance.y) * spreadMultiplier,
-                Random.Range(-bulletSpreadVariance.z, bulletSpreadVariance.z) * spreadMultiplier
-            );
-            direction.Normalize();
-        }
-
-        return direction;
     }
 
     IEnumerator SpawnTrail(TrailRenderer trail, Vector3 hitPoint, Vector3 hitNormal, bool madeImpact)
@@ -366,63 +573,42 @@ public class Shotgun : MonoBehaviour
         if (cameraTransform != null)
         {
             weaponCamera = cameraTransform.GetComponent<Camera>();
-            SetInitialPosition();
+            lastCameraPosition = cameraTransform.position;
+            lastCameraRotation = cameraTransform.rotation;
+
+            if (stabilizeModel && useSmoothingFilter)
+            {
+                for (int i = 0; i < smoothingBufferSize; i++)
+                {
+                    positionBuffer[i] = CalculateDesiredPosition();
+                }
+            }
         }
     }
 
-    public void ResetToOriginalPosition()
-    {
-        if (cameraTransform != null)
-        {
-            SetInitialPosition();
-        }
-    }
-
-    public void SetDamage(int newDamage)
-    {
-        damagePerPellet = Mathf.Max(1, newDamage);
-    }
-
-    public void IncreaseDamage(int damageIncrease)
-    {
-        damagePerPellet += damageIncrease;
-    }
-
-    public bool IsReloading()
-    {
-        return isReloading;
-    }
-
-    public bool CanShoot()
-    {
-        return canShoot && BulletCount > 0 && !isReloading;
-    }
-
+    public void SetPlayer(Transform player) { playerTransform = player; }
+    public void ResetToOriginalPosition() { if (cameraTransform != null) SetInitialPosition(); }
+    public void SetDamage(int newDamage) { damagePerPellet = Mathf.Max(1, newDamage); }
+    public void IncreaseDamage(int damageIncrease) { damagePerPellet += damageIncrease; }
+    public bool IsReloading() { return isReloading; }
+    public bool CanShoot() { return canShoot && BulletCount > 0 && !isReloading; }
     public void SetAmmo(int newBulletCount, int newMaxBullets = -1)
     {
         BulletCount = Mathf.Clamp(newBulletCount, 0, MaxBullets);
-
-        if (newMaxBullets > 0)
-        {
-            MaxBullets = newMaxBullets;
-        }
-
+        if (newMaxBullets > 0) MaxBullets = newMaxBullets;
         UpdateAmmoUI();
     }
-
     public void AddAmmo(int amount)
     {
         BulletCount = Mathf.Clamp(BulletCount + amount, 0, MaxBullets);
         UpdateAmmoUI();
     }
-
     public void SetAiming(bool aim)
     {
         if (canAim)
         {
             isAiming = aim;
-            addBulletSpread = !aim;
-            bulletSpreadVariance = aim ? new Vector3(0.05f, 0.05f, 0.05f) : new Vector3(0.1f, 0.1f, 0.1f);
+            addBulletSpread = true; // ZMIENIONE: zawsze aktywny spread
             targetOffset = aim ? aimOffset : hipOffset;
 
             if (weaponCamera != null)
@@ -431,32 +617,31 @@ public class Shotgun : MonoBehaviour
             }
         }
     }
-
-    public bool IsAiming()
+    public bool IsAiming() { return isAiming; }
+    public void SetAutomaticFire(bool automatic) { automaticFire = automatic; }
+    public void SetHipOffset(Vector3 offset) { hipOffset = offset; if (!isAiming) targetOffset = offset; }
+    public void SetAimOffset(Vector3 offset) { aimOffset = offset; if (isAiming) targetOffset = offset; }
+    public void SetPreventCameraClipping(bool prevent) { preventCameraClipping = prevent; }
+    public void SetMinDistanceFromCamera(float distance) { minDistanceFromCamera = Mathf.Max(0.1f, distance); }
+    public void SetStabilizeModel(bool stabilize) { stabilizeModel = stabilize; }
+    public void SetStabilizationSettings(float posSmoothTime, float rotSmoothTime, float maxVelocity)
     {
-        return isAiming;
+        positionSmoothTime = posSmoothTime;
+        rotationSmoothTime = rotSmoothTime;
+        maxVelocityThreshold = maxVelocity;
     }
-
-    public void SetAutomaticFire(bool automatic)
+    public void SetSmoothingFilter(bool useFilter, int bufferSize = 5)
     {
-        automaticFire = automatic;
-    }
+        useSmoothingFilter = useFilter;
+        smoothingBufferSize = bufferSize;
 
-    public void SetHipOffset(Vector3 offset)
-    {
-        hipOffset = offset;
-        if (!isAiming)
+        if (useSmoothingFilter && cameraTransform != null)
         {
-            targetOffset = offset;
-        }
-    }
-
-    public void SetAimOffset(Vector3 offset)
-    {
-        aimOffset = offset;
-        if (isAiming)
-        {
-            targetOffset = offset;
+            positionBuffer = new Vector3[smoothingBufferSize];
+            for (int i = 0; i < smoothingBufferSize; i++)
+            {
+                positionBuffer[i] = CalculateDesiredPosition();
+            }
         }
     }
 }

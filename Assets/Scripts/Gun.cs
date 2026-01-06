@@ -35,6 +35,25 @@ public class Gun : MonoBehaviour
     private Vector3 safeOffset;
     private bool isCameraClipping = false;
 
+    [Header("Model Stabilization Settings - FIXED")]
+    [SerializeField] private bool stabilizeModel = true;
+    [SerializeField] private float positionSmoothTime = 0.06f;
+    [SerializeField] private float rotationSmoothTime = 0.06f;
+    [SerializeField] private float maxVelocityThreshold = 3.5f;
+    [SerializeField] private float velocityMultiplier = 1.3f;
+    [SerializeField] private bool useLateUpdateForStabilization = true;
+    [SerializeField] private bool useSmoothingFilter = true;
+    [SerializeField] private int smoothingBufferSize = 5;
+
+    private Vector3 lastCameraPosition;
+    private Quaternion lastCameraRotation;
+    private Vector3 positionVelocity = Vector3.zero;
+    private Vector3 angularVelocity = Vector3.zero;
+    private Vector3 smoothedPosition;
+    private Quaternion smoothedRotation;
+    private Vector3[] positionBuffer;
+    private int bufferIndex = 0;
+
     [Header("Visual Effects")]
     [SerializeField] private ParticleSystem shootingSystem;
     [SerializeField] private Transform bulletSpawnPoint;
@@ -69,7 +88,7 @@ public class Gun : MonoBehaviour
     private float lastShootTime;
     private Vector3 currentOffset;
     private Vector3 targetOffset;
-    private Vector3 velocity = Vector3.zero;
+    private Vector3 offsetVelocity = Vector3.zero;
 
     private void Start()
     {
@@ -100,9 +119,32 @@ public class Gun : MonoBehaviour
             }
         }
 
+        // Inicjalizacja bufora wyg³adzania
+        if (useSmoothingFilter)
+        {
+            positionBuffer = new Vector3[smoothingBufferSize];
+            for (int i = 0; i < smoothingBufferSize; i++)
+            {
+                positionBuffer[i] = transform.position;
+            }
+        }
+
         if (cameraTransform != null)
         {
-            SetInitialPosition();
+            lastCameraPosition = cameraTransform.position;
+            lastCameraRotation = cameraTransform.rotation;
+            smoothedPosition = CalculateDesiredPosition();
+            smoothedRotation = cameraTransform.rotation;
+
+            if (stabilizeModel)
+            {
+                transform.position = smoothedPosition;
+                transform.rotation = smoothedRotation;
+            }
+            else
+            {
+                SetInitialPosition();
+            }
         }
     }
 
@@ -118,7 +160,18 @@ public class Gun : MonoBehaviour
         HandleReload();
         UpdateAmmoUI();
 
-        UpdateWeaponPosition();
+        if (!useLateUpdateForStabilization)
+        {
+            UpdateWeaponPosition();
+        }
+    }
+
+    private void LateUpdate()
+    {
+        if (useLateUpdateForStabilization)
+        {
+            UpdateWeaponPosition();
+        }
     }
 
     private void SetInitialPosition()
@@ -136,27 +189,32 @@ public class Gun : MonoBehaviour
     {
         if (cameraTransform == null) return;
 
-        // SprawdŸ kolizjê z kamer¹ przed aktualizacj¹ pozycji
+        // SprawdŸ kolizjê z kamer¹
         if (preventCameraClipping)
         {
             CheckCameraCollision();
         }
 
+        // Aktualizuj offset
         currentOffset = Vector3.SmoothDamp(
             currentOffset,
             isCameraClipping ? safeOffset : targetOffset,
-            ref velocity,
+            ref offsetVelocity,
             0.1f,
             aimSpeed
         );
 
-        Vector3 desiredPosition = cameraTransform.position +
-                                 cameraTransform.right * currentOffset.x +
-                                 cameraTransform.up * currentOffset.y +
-                                 cameraTransform.forward * currentOffset.z;
-
-        transform.position = desiredPosition;
-        transform.rotation = cameraTransform.rotation;
+        if (stabilizeModel)
+        {
+            StabilizeWeaponPosition();
+        }
+        else
+        {
+            // Bez stabilizacji - proste przypisanie
+            Vector3 desiredPosition = CalculateDesiredPosition();
+            transform.position = desiredPosition;
+            transform.rotation = cameraTransform.rotation;
+        }
 
         if (fixModelRotation)
         {
@@ -164,61 +222,134 @@ public class Gun : MonoBehaviour
         }
     }
 
+    private Vector3 CalculateDesiredPosition()
+    {
+        return cameraTransform.position +
+               cameraTransform.right * currentOffset.x +
+               cameraTransform.up * currentOffset.y +
+               cameraTransform.forward * currentOffset.z;
+    }
+
+    private void StabilizeWeaponPosition()
+    {
+        if (cameraTransform == null) return;
+
+        Vector3 cameraVelocity = (cameraTransform.position - lastCameraPosition) / Time.deltaTime;
+
+        // G£ÓWNA POPRAWKA: U¿yj kwadratowej funkcji zamiast liniowej dla g³adszego ruchu
+        float velocityMultiplierValue = Mathf.Clamp01(cameraVelocity.magnitude / maxVelocityThreshold);
+        velocityMultiplierValue = Mathf.Pow(velocityMultiplierValue, 1.5f); // Kwadratowa funkcja
+
+        float currentPositionSmoothTime = positionSmoothTime * (1f + velocityMultiplierValue * velocityMultiplier);
+        float currentRotationSmoothTime = rotationSmoothTime * (1f + velocityMultiplierValue * velocityMultiplier);
+
+        Vector3 targetPosition = CalculateDesiredPosition();
+
+        // G£ADKIE POZYCJONOWANIE z dodatkowym filtrem
+        Vector3 smoothedTargetPosition;
+
+        if (useSmoothingFilter)
+        {
+            // Dodaj now¹ pozycjê do bufora
+            positionBuffer[bufferIndex] = targetPosition;
+            bufferIndex = (bufferIndex + 1) % smoothingBufferSize;
+
+            // Oblicz œredni¹ z bufora
+            Vector3 averagePosition = Vector3.zero;
+            for (int i = 0; i < smoothingBufferSize; i++)
+            {
+                averagePosition += positionBuffer[i];
+            }
+            averagePosition /= smoothingBufferSize;
+
+            smoothedTargetPosition = averagePosition;
+        }
+        else
+        {
+            smoothedTargetPosition = targetPosition;
+        }
+
+        // SmoothDamp z clampowanym velocity
+        Vector3 currentVelocity = positionVelocity;
+        currentVelocity = Vector3.ClampMagnitude(currentVelocity, 10f); // ZAPEWNIENIE: ogranicz maksymaln¹ prêdkoœæ
+
+        transform.position = Vector3.SmoothDamp(
+            transform.position,
+            smoothedTargetPosition,
+            ref currentVelocity, // U¿yj lokalnej zmiennej
+            currentPositionSmoothTime,
+            Mathf.Infinity,
+            Time.deltaTime
+        );
+
+        positionVelocity = currentVelocity; // Zapisz z powrotem
+
+        // G£ADSZA ROTACJA
+        smoothedRotation = Quaternion.Slerp(
+            smoothedRotation,
+            cameraTransform.rotation,
+            Time.deltaTime / currentRotationSmoothTime
+        );
+
+        transform.rotation = smoothedRotation;
+
+        // Zapisz aktualn¹ pozycjê i rotacjê kamery dla nastêpnej klatki
+        lastCameraPosition = cameraTransform.position;
+        lastCameraRotation = cameraTransform.rotation;
+    }
+
     private void CheckCameraCollision()
     {
         if (cameraTransform == null) return;
 
-        // Oblicz aktualn¹ pozycjê broni
         Vector3 weaponPos = cameraTransform.position +
                            cameraTransform.right * targetOffset.x +
                            cameraTransform.up * targetOffset.y +
                            cameraTransform.forward * targetOffset.z;
 
-        // SprawdŸ odleg³oœæ od kamery
         float distanceToCamera = Vector3.Distance(weaponPos, cameraTransform.position);
-
-        // SprawdŸ kolizjê sphere cast
         Vector3 direction = (weaponPos - cameraTransform.position).normalized;
         float checkDistance = Mathf.Max(distanceToCamera, minDistanceFromCamera);
 
+        // U¿yj SphereCast z wiêksz¹ precyzj¹
         RaycastHit[] hits = Physics.SphereCastAll(
             cameraTransform.position,
-            collisionSphereRadius,
+            collisionSphereRadius * 1.2f, // ZWIÊKSZONE dla lepszego wykrywania
             direction,
-            checkDistance,
-            cameraCollisionMask
+            checkDistance + 0.1f, // DODANE margines
+            cameraCollisionMask,
+            QueryTriggerInteraction.Ignore // IGNORUJ TRIGGERY
         );
 
         isCameraClipping = false;
 
         foreach (RaycastHit hit in hits)
         {
-            // Ignoruj w³asny collider i collidery gracza
             if (hit.collider.transform == transform ||
+                hit.collider.transform == cameraTransform ||
                 hit.collider.transform == playerTransform ||
                 (playerTransform != null && hit.collider.transform.IsChildOf(playerTransform)))
                 continue;
 
-            // Jeœli trafiliœmy obiekt miêdzy broni¹ a kamer¹
             if (hit.distance < distanceToCamera)
             {
                 isCameraClipping = true;
 
-                // Oblicz bezpieczny offset (odsuniêty od kamery)
-                float penetrationDepth = distanceToCamera - hit.distance + minDistanceFromCamera;
+                // Dodaj dodatkowy margines bezpieczeñstwa
+                float safetyMargin = 0.05f;
                 safeOffset = new Vector3(
                     targetOffset.x,
                     targetOffset.y,
-                    Mathf.Max(targetOffset.z, hit.distance + minDistanceFromCamera)
+                    Mathf.Max(targetOffset.z, hit.distance + minDistanceFromCamera + safetyMargin)
                 );
 
-                Debug.Log($"Gun: Camera clipping detected! Adjusting Z from {targetOffset.z:F2} to {safeOffset.z:F2}");
+                Debug.Log($"Gun: Camera collision! Adjusting distance to {hit.distance + minDistanceFromCamera + safetyMargin:F2}");
                 break;
             }
         }
 
-        // Dodatkowe sprawdzenie minimalnej odleg³oœci
-        if (distanceToCamera < minDistanceFromCamera && !isCameraClipping)
+        // Dodatkowe sprawdzenie - jeœli broñ jest za blisko kamery nawet bez kolizji
+        if (distanceToCamera < minDistanceFromCamera * 0.8f && !isCameraClipping)
         {
             isCameraClipping = true;
             safeOffset = new Vector3(
@@ -229,6 +360,7 @@ public class Gun : MonoBehaviour
         }
     }
 
+    // RESZTA METOD BEZ ZMIAN (HandleAiming, HandleShooting, HandleReload, Shoot, itd.)
     private void HandleAiming()
     {
         if (!canAim || cameraTransform == null) return;
@@ -432,7 +564,18 @@ public class Gun : MonoBehaviour
 
         if (cameraTransform != null)
         {
-            SetInitialPosition();
+            lastCameraPosition = cameraTransform.position;
+            lastCameraRotation = cameraTransform.rotation;
+
+            if (stabilizeModel)
+            {
+                smoothedPosition = CalculateDesiredPosition();
+                smoothedRotation = cameraTransform.rotation;
+            }
+            else
+            {
+                SetInitialPosition();
+            }
         }
     }
 
@@ -445,7 +588,15 @@ public class Gun : MonoBehaviour
     {
         if (cameraTransform != null)
         {
-            SetInitialPosition();
+            if (stabilizeModel)
+            {
+                smoothedPosition = CalculateDesiredPosition();
+                smoothedRotation = cameraTransform.rotation;
+            }
+            else
+            {
+                SetInitialPosition();
+            }
         }
     }
 
@@ -503,12 +654,40 @@ public class Gun : MonoBehaviour
         minDistanceFromCamera = Mathf.Max(0.1f, distance);
     }
 
+    // Stabilizacja modelu
+    public void SetStabilizeModel(bool stabilize)
+    {
+        stabilizeModel = stabilize;
+    }
+
+    public void SetStabilizationSettings(float posSmoothTime, float rotSmoothTime, float maxVelocity)
+    {
+        positionSmoothTime = posSmoothTime;
+        rotationSmoothTime = rotSmoothTime;
+        maxVelocityThreshold = maxVelocity;
+    }
+
+    public void SetSmoothingFilter(bool useFilter, int bufferSize = 5)
+    {
+        useSmoothingFilter = useFilter;
+        smoothingBufferSize = bufferSize;
+
+        if (useSmoothingFilter && cameraTransform != null)
+        {
+            positionBuffer = new Vector3[smoothingBufferSize];
+            for (int i = 0; i < smoothingBufferSize; i++)
+            {
+                positionBuffer[i] = CalculateDesiredPosition();
+            }
+        }
+    }
+
     void OnDrawGizmosSelected()
     {
         if (cameraTransform != null && preventCameraClipping)
         {
             // Narysuj sphere collision check
-            Gizmos.color = isCameraClipping ? Color.red : Color.yellow;
+            Gizmos.color = isCameraClipping ? Color.red : Color.green;
             Vector3 weaponPos = cameraTransform.position +
                                cameraTransform.right * targetOffset.x +
                                cameraTransform.up * targetOffset.y +
@@ -519,6 +698,10 @@ public class Gun : MonoBehaviour
             // Linia do kamery
             Gizmos.color = Color.blue;
             Gizmos.DrawLine(cameraTransform.position, weaponPos);
+
+            // Minimalna odleg³oœæ
+            Gizmos.color = Color.yellow;
+            Gizmos.DrawWireSphere(cameraTransform.position, minDistanceFromCamera);
         }
     }
 }

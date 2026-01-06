@@ -131,20 +131,27 @@ public class PlayerAction : MonoBehaviour
         }
     }
 
-    // DODANE: Przypisanie gracza do broni
     void AssignPlayerToWeapons()
     {
         Transform playerTransform = this.transform;
 
         if (gun != null)
         {
-            gun.SendMessage("SetPlayer", playerTransform, SendMessageOptions.DontRequireReceiver);
+            gun.SetPlayer(playerTransform);
             Debug.Log("Player assigned to Gun");
         }
 
-        // To samo dla innych broni jeśli potrzebują
-        // rifle?.SendMessage("SetPlayer", playerTransform, SendMessageOptions.DontRequireReceiver);
-        // shotgun?.SendMessage("SetPlayer", playerTransform, SendMessageOptions.DontRequireReceiver);
+        if (shotgun != null)
+        {
+            shotgun.SetPlayer(playerTransform);
+            Debug.Log("Player assigned to Shotgun");
+        }
+
+        if (rifle != null)
+        {
+            rifle.SetPlayer(playerTransform);
+            Debug.Log("Player assigned to Rifle");
+        }
     }
 
     void Update()
@@ -161,7 +168,6 @@ public class PlayerAction : MonoBehaviour
         HandleShooting();
     }
 
-    // DODANE: Obsługa celowania
     void HandleAiming()
     {
         if (Input.GetMouseButtonDown(1))
@@ -230,41 +236,7 @@ public class PlayerAction : MonoBehaviour
             return;
         }
 
-        currentWeaponType = weaponType;
-
-        if (Gun != null)
-        {
-            Gun.SetActive(weaponType == 1);
-            if (weaponType == 1) currentWeaponScript = gun;
-        }
-
-        if (Shotgun != null)
-        {
-            Shotgun.SetActive(weaponType == 2);
-            if (weaponType == 2) currentWeaponScript = shotgun;
-        }
-
-        if (Rifle != null)
-        {
-            Rifle.SetActive(weaponType == 3);
-            if (weaponType == 3) currentWeaponScript = rifle;
-        }
-
-        if (GunPng != null) GunPng.SetActive(weaponType == 1);
-        if (ShotgunPng != null) ShotgunPng.SetActive(weaponType == 2);
-        if (RiflePng != null) RiflePng.SetActive(weaponType == 3);
-
-        Debug.Log($"Switched to weapon: {weaponType}");
-
-        shootDelay = weaponType switch
-        {
-            1 => 0.5f,
-            2 => 0.5f,
-            3 => 0.15f,
-            _ => 0.5f
-        };
-
-        // Zatrzymaj celowanie przy zmianie broni
+        // Wyłącz celowanie poprzedniej broni
         if (isAiming)
         {
             SetWeaponAiming(false);
@@ -272,6 +244,38 @@ public class PlayerAction : MonoBehaviour
             if (playerCamera != null)
                 playerCamera.fieldOfView = normalFOV;
         }
+
+        currentWeaponType = weaponType;
+
+        // Aktywuj/Deaktywuj modele broni
+        if (Gun != null) Gun.SetActive(weaponType == 1);
+        if (Shotgun != null) Shotgun.SetActive(weaponType == 2);
+        if (Rifle != null) Rifle.SetActive(weaponType == 3);
+
+        // Aktywuj/Deaktywuj UI
+        if (GunPng != null) GunPng.SetActive(weaponType == 1);
+        if (ShotgunPng != null) ShotgunPng.SetActive(weaponType == 2);
+        if (RiflePng != null) RiflePng.SetActive(weaponType == 3);
+
+        // Ustaw aktualny skrypt broni
+        currentWeaponScript = weaponType switch
+        {
+            1 => gun,
+            2 => shotgun,
+            3 => rifle,
+            _ => gun
+        };
+
+        Debug.Log($"Switched to weapon: {weaponType}");
+
+        // Ustaw opóźnienie strzału dla broni
+        shootDelay = weaponType switch
+        {
+            1 => 0.5f,    // Pistolet
+            2 => 0.5f,    // Strzelba
+            3 => 0.15f,   // Karabin
+            _ => 0.5f
+        };
     }
 
     void HandleShooting()
@@ -532,7 +536,8 @@ public class PlayerAction : MonoBehaviour
 
     void UpdateReloadUI(float progress)
     {
-        // Możesz dodać pasek postępu
+        // Możesz dodać pasek postępu lub inne UI
+        // Aktualnie tylko włączamy/wyłączamy reloadpng
     }
 
     // METODY DŹWIĘKOWE
@@ -663,7 +668,6 @@ public class PlayerAction : MonoBehaviour
         }
     }
 
-    // DODANE: Pobierz aktualną broń
     public MonoBehaviour GetCurrentWeapon()
     {
         return currentWeaponType switch
