@@ -3,43 +3,71 @@ using UnityEngine;
 public class EnemyBehaviour : MonoBehaviour
 {
     private EnemyHealth enemyHealth;
+    private EnemyMovement enemyMovement;
 
-    private void Start()
+    void Awake()
     {
-        // Pobierz komponent EnemyHealth z tego samego obiektu
         enemyHealth = GetComponent<EnemyHealth>();
+        enemyMovement = GetComponent<EnemyMovement>();
 
-        // Jeœli nie ma EnemyHealth, dodaj go automatycznie
         if (enemyHealth == null)
         {
             enemyHealth = gameObject.AddComponent<EnemyHealth>();
-            Debug.LogWarning("EnemyHealth component was missing and has been added automatically to " + gameObject.name);
         }
     }
 
-    // Publiczna metoda Die, która mo¿e byæ wywo³ana z innych skryptów
-    public void Die()
+    void Start()
     {
-        // ZnajdŸ komponent EnemyHealth jeœli nie zosta³ znaleziony w Start
-        if (enemyHealth == null)
-        {
-            enemyHealth = GetComponent<EnemyHealth>();
-        }
-
-        // Jeœli EnemyHealth istnieje, u¿yj jego metody Die
         if (enemyHealth != null)
         {
-            enemyHealth.TakeDamage(enemyHealth.maxHealth); // Zadaj obra¿enia równe maksymalnemu zdrowiu
-        }
-        else
-        {
-            // Awaryjne zniszczenie obiektu jeœli nie ma EnemyHealth
-            Debug.LogWarning("Enemy destroyed without EnemyHealth component");
-            Destroy(gameObject);
+            // Subskrybuj oba eventy
+            enemyHealth.OnEnemyDeath += HandleEnemyDeathSimple;
+            enemyHealth.OnEnemyDeathWithObject += HandleEnemyDeathWithObject;
         }
     }
 
-    // Metoda do zadawania obra¿eñ temu przeciwnikowi
+    void OnDestroy()
+    {
+        if (enemyHealth != null)
+        {
+            enemyHealth.OnEnemyDeath -= HandleEnemyDeathSimple;
+            enemyHealth.OnEnemyDeathWithObject -= HandleEnemyDeathWithObject;
+        }
+    }
+
+    void HandleEnemyDeathSimple()
+    {
+        HandleDeath();
+    }
+
+    void HandleEnemyDeathWithObject(GameObject deadEnemy)
+    {
+        if (deadEnemy == gameObject)
+        {
+            HandleDeath();
+        }
+    }
+
+    void HandleDeath()
+    {
+        Debug.Log($"{name} - EnemyBehaviour: Death handled");
+
+        Collider[] colliders = GetComponentsInChildren<Collider>();
+        foreach (Collider col in colliders)
+        {
+            col.enabled = false;
+        }
+
+        MonoBehaviour[] scripts = GetComponents<MonoBehaviour>();
+        foreach (MonoBehaviour script in scripts)
+        {
+            if (script != this && script.enabled)
+            {
+                script.enabled = false;
+            }
+        }
+    }
+
     public void TakeDamage(int damage)
     {
         if (enemyHealth != null)
@@ -48,9 +76,8 @@ public class EnemyBehaviour : MonoBehaviour
         }
     }
 
-    // Opcjonalnie: metoda do sprawdzania czy wróg ¿yje
     public bool IsAlive()
     {
-        return enemyHealth != null && enemyHealth.currentHealth > 0;
+        return enemyHealth != null && enemyHealth.IsAlive();
     }
 }

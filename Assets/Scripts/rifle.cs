@@ -1,300 +1,97 @@
-using System.Collections;
-using TMPro;
-using UnityEngine;
-using UnityEngine.UI;
+// W Rifle.cs DODAJ te zmienne:
+[Header("Camera Collision Prevention")]
+[SerializeField] private bool preventCameraClipping = true;
+[SerializeField] private float minDistanceFromCamera = 0.3f;
+[SerializeField] private float collisionSphereRadius = 0.25f;
+[SerializeField] private LayerMask cameraCollisionMask = -1;
+private Vector3 safeOffset;
+private bool isCameraClipping = false;
 
-[RequireComponent(typeof(Animator))]
-public class Rifle : MonoBehaviour
+// W UpdateWeaponPosition() DODAJ:
+private void UpdateWeaponPosition()
 {
-    [Header("Audio")]
-    [SerializeField] private AudioSource gunSound;
+    if (cameraTransform == null) return;
 
-    [Header("Shooting Settings")]
-    [SerializeField] private bool addBulletSpread = true;
-    [SerializeField] private Vector3 bulletSpreadVariance = new Vector3(0.05f, 0.05f, 0.05f);
-    [SerializeField] private float shootDelay = 0.15f;
-    [SerializeField] private LayerMask mask = -1;
-    [SerializeField] private float bulletSpeed = 150;
-    [SerializeField] private int damagePerBullet = 15;
-
-    [Header("Visual Effects")]
-    [SerializeField] private ParticleSystem shootingSystem;
-    [SerializeField] private Transform bulletSpawnPoint;
-    [SerializeField] private ParticleSystem impactParticleSystem;
-    [SerializeField] private TrailRenderer bulletTrail;
-
-    [Header("Hitmarker")]
-    [SerializeField] private Image hitmarkerImage;
-    [SerializeField] private float hitmarkerDisplayTime = 0.2f;
-
-    [Header("Ammo")]
-    public int BulletCount;
-    public int MaxBullets = 30;
-    public TextMeshProUGUI BulletsText;
-    public GameObject BulletCounter;
-
-    [Header("Camera Follow")]
-    [SerializeField] private Transform cameraTransform;
-    [SerializeField] private Vector3 originalLocalPosition;
-    [SerializeField] private bool useOriginalPosition = true;
-
-    [Header("Rifle Specific Settings")]
-    [SerializeField] private bool automaticFire = true;
-    [SerializeField] private float reloadTime = 2.0f;
-    [SerializeField] private AudioClip reloadSound;
-
-    // Prywatne zmienne
-    private Animator animator;
-    private float lastShootTime;
-    private bool canShoot;
-    private bool isReloading;
-
-    private void Start()
+    // SprawdŸ kolizjê z kamer¹
+    if (preventCameraClipping)
     {
-        BulletCount = MaxBullets;
-        canShoot = true;
-        isReloading = false;
-        UpdateAmmoUI();
-
-        if (hitmarkerImage != null)
-            hitmarkerImage.enabled = false;
+        CheckCameraCollision();
     }
 
-    private void Awake()
+    currentOffset = Vector3.SmoothDamp(
+        currentOffset,
+        isCameraClipping ? safeOffset : targetOffset,
+        ref velocity,
+        0.1f,
+        aimSpeed
+    );
+
+    Vector3 desiredPosition = cameraTransform.position +
+                             cameraTransform.right * currentOffset.x +
+                             cameraTransform.up * currentOffset.y +
+                             cameraTransform.forward * currentOffset.z;
+
+    transform.position = desiredPosition;
+    transform.rotation = cameraTransform.rotation;
+}
+
+// DODAJ tê metodê:
+private void CheckCameraCollision()
+{
+    if (cameraTransform == null) return;
+
+    Vector3 weaponPos = cameraTransform.position +
+                       cameraTransform.right * targetOffset.x +
+                       cameraTransform.up * targetOffset.y +
+                       cameraTransform.forward * targetOffset.z;
+
+    float distanceToCamera = Vector3.Distance(weaponPos, cameraTransform.position);
+    Vector3 direction = (weaponPos - cameraTransform.position).normalized;
+    float checkDistance = Mathf.Max(distanceToCamera, minDistanceFromCamera);
+
+    RaycastHit[] hits = Physics.SphereCastAll(
+        cameraTransform.position,
+        collisionSphereRadius,
+        direction,
+        checkDistance,
+        cameraCollisionMask
+    );
+
+    isCameraClipping = false;
+
+    foreach (RaycastHit hit in hits)
     {
-        animator = GetComponent<Animator>();
-    }
+        if (hit.collider.transform == transform ||
+            (playerTransform != null && hit.collider.transform.IsChildOf(playerTransform)))
+            continue;
 
-    private void Update()
-    {
-        HandleInput();
-        UpdateAmmoUI();
-        FollowCamera();
-    }
-
-    private void HandleInput()
-    {
-        // Prze³adowanie
-        if (Input.GetKeyDown(KeyCode.R) && !isReloading && BulletCount < MaxBullets)
+        if (hit.distance < distanceToCamera)
         {
-            StartCoroutine(Reload());
-        }
-
-        // Strzelanie
-        if (automaticFire)
-        {
-            if (Input.GetMouseButton(0) && canShoot && !isReloading)
-            {
-                Shoot();
-            }
-        }
-        else
-        {
-            if (Input.GetMouseButtonDown(0) && canShoot && !isReloading)
-            {
-                Shoot();
-            }
-        }
-
-        // Sprawdzenie amunicji
-        if (BulletCount <= 0)
-        {
-            BulletCount = 0;
-            canShoot = false;
-
-            // Automatyczne prze³adowanie gdy skoñczy siê amunicja
-            if (!isReloading)
-            {
-                StartCoroutine(Reload());
-            }
-        }
-        else
-        {
-            canShoot = true;
-        }
-    }
-
-    private void FollowCamera()
-    {
-        if (cameraTransform != null)
-        {
-            transform.position = cameraTransform.position;
-            transform.rotation = cameraTransform.rotation;
-
-            if (useOriginalPosition)
-            {
-                transform.localPosition = originalLocalPosition;
-            }
-        }
-    }
-
-    public void Shoot()
-    {
-        if (lastShootTime + shootDelay < Time.time && canShoot && !isReloading)
-        {
-            BulletCount--;
-            UpdateAmmoUI();
-
-            // Odtwórz dŸwiêk strza³u
-            if (gunSound != null)
-                gunSound.Play();
-
-            // Animacja strza³u
-            //if (animator != null)
-              //  animator.SetTrigger("Shoot");
-
-            shootingSystem.Play();
-            Vector3 direction = GetDirection();
-
-            if (Physics.Raycast(bulletSpawnPoint.position, direction, out RaycastHit hit, float.MaxValue, mask))
-            {
-                TrailRenderer trail = Instantiate(bulletTrail, bulletSpawnPoint.position, Quaternion.identity);
-                StartCoroutine(SpawnTrail(trail, hit.point, hit.normal, true));
-
-                if (hit.collider.CompareTag("Enemy"))
-                {
-                    ShowHitmarker();
-
-                    EnemyHealth enemyHealth = hit.collider.GetComponent<EnemyHealth>();
-                    if (enemyHealth != null)
-                    {
-                        enemyHealth.TakeDamage(damagePerBullet);
-                    }
-                }
-            }
-            else
-            {
-                TrailRenderer trail = Instantiate(bulletTrail, bulletSpawnPoint.position, Quaternion.identity);
-                StartCoroutine(SpawnTrail(trail, bulletSpawnPoint.position + direction * 100, Vector3.zero, false));
-            }
-
-            lastShootTime = Time.time;
-        }
-    }
-
-    private IEnumerator Reload()
-    {
-        isReloading = true;
-        canShoot = false;
-
-        // Odtwórz dŸwiêk prze³adowania
-        if (reloadSound != null && gunSound != null)
-        {
-            gunSound.PlayOneShot(reloadSound);
-        }
-
-        // Animacja prze³adowania
-        if (animator != null)
-            animator.SetTrigger("Reload");
-
-        yield return new WaitForSeconds(reloadTime);
-
-        BulletCount = MaxBullets;
-        isReloading = false;
-        canShoot = true;
-        UpdateAmmoUI();
-    }
-
-    private Vector3 GetDirection()
-    {
-        Vector3 direction = bulletSpawnPoint.forward;
-
-        if (addBulletSpread)
-        {
-            direction += new Vector3(
-                Random.Range(-bulletSpreadVariance.x, bulletSpreadVariance.x),
-                Random.Range(-bulletSpreadVariance.y, bulletSpreadVariance.y),
-                Random.Range(-bulletSpreadVariance.z, bulletSpreadVariance.z)
+            isCameraClipping = true;
+            float penetrationDepth = distanceToCamera - hit.distance + minDistanceFromCamera;
+            safeOffset = new Vector3(
+                targetOffset.x,
+                targetOffset.y,
+                Mathf.Max(targetOffset.z, hit.distance + minDistanceFromCamera)
             );
-            direction.Normalize();
-        }
-
-        return direction;
-    }
-
-    private IEnumerator SpawnTrail(TrailRenderer trail, Vector3 hitPoint, Vector3 hitNormal, bool madeImpact)
-    {
-        Vector3 startPosition = trail.transform.position;
-        float distance = Vector3.Distance(trail.transform.position, hitPoint);
-        float remainingDistance = distance;
-
-        while (remainingDistance > 0)
-        {
-            trail.transform.position = Vector3.Lerp(startPosition, hitPoint, 1 - (remainingDistance / distance));
-            remainingDistance -= bulletSpeed * Time.deltaTime;
-            yield return null;
-        }
-
-        trail.transform.position = hitPoint;
-
-        if (madeImpact)
-        {
-            Instantiate(impactParticleSystem, hitPoint, Quaternion.LookRotation(hitNormal));
-        }
-
-        Destroy(trail.gameObject, trail.time);
-    }
-
-    private void ShowHitmarker()
-    {
-        if (hitmarkerImage != null)
-        {
-            hitmarkerImage.enabled = true;
-            StartCoroutine(HideHitmarkerAfterDelay());
+            break;
         }
     }
 
-    private IEnumerator HideHitmarkerAfterDelay()
+    if (distanceToCamera < minDistanceFromCamera && !isCameraClipping)
     {
-        yield return new WaitForSeconds(hitmarkerDisplayTime);
-        if (hitmarkerImage != null)
-            hitmarkerImage.enabled = false;
+        isCameraClipping = true;
+        safeOffset = new Vector3(
+            targetOffset.x,
+            targetOffset.y,
+            minDistanceFromCamera
+        );
     }
+}
 
-    private void UpdateAmmoUI()
-    {
-        if (BulletsText != null)
-            BulletsText.text = BulletCount.ToString() + " / " + MaxBullets.ToString();
-    }
-
-    public void SetDamage(int newDamage)
-    {
-        damagePerBullet = newDamage;
-    }
-
-    public void IncreaseDamage(int damageIncrease)
-    {
-        damagePerBullet += damageIncrease;
-    }
-
-    public void SetCamera(Transform newCamera)
-    {
-        cameraTransform = newCamera;
-    }
-
-    public void ResetToOriginalPosition()
-    {
-        if (cameraTransform != null)
-        {
-            transform.position = cameraTransform.position;
-            transform.rotation = cameraTransform.rotation;
-            transform.localPosition = originalLocalPosition;
-        }
-    }
-
-    // Metody specyficzne dla karabinu
-    public void SetAutomaticFire(bool automatic)
-    {
-        automaticFire = automatic;
-    }
-
-    public void SetReloadTime(float time)
-    {
-        reloadTime = time;
-    }
-
-    public bool IsReloading()
-    {
-        return isReloading;
-    }
+// W SetInitialPosition() upewnij siê ¿e jest:
+private void SetInitialPosition()
+{
+    safeOffset = hipOffset; // DODAJ tê liniê
+    // ... reszta kodu
 }

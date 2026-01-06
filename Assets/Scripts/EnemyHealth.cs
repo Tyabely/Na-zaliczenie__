@@ -4,24 +4,49 @@ using System;
 public class EnemyHealth : MonoBehaviour
 {
     [Header("Health Settings")]
-    public int maxHealth = 100;
+    public int maxHealth = 50;
     public int currentHealth;
 
-    // DODAJ TÊ LINIÊ - zdarzenie œmierci przeciwnika
-    public event Action OnEnemyDeath;
+    // Dwie wersje eventï¿½w dla kompatybilnoï¿½ci
+    public event Action OnEnemyDeath; // Stara wersja (bez parametru)
+    public event Action<GameObject> OnEnemyDeathWithObject; // Nowa wersja (z GameObject)
 
-    [Header("Visual Effects")]
+    [Header("Effects")]
     public GameObject deathEffect;
     public AudioClip deathSound;
+    public AudioClip hitSound;
 
-    void Start()
+    private AudioSource audioSource;
+    private bool isDead = false;
+    private Collider enemyCollider;
+    private Rigidbody enemyRigidbody;
+    private Renderer enemyRenderer;
+
+    void Awake()
     {
         currentHealth = maxHealth;
+
+        enemyCollider = GetComponent<Collider>();
+        enemyRigidbody = GetComponent<Rigidbody>();
+        enemyRenderer = GetComponent<Renderer>();
+
+        audioSource = GetComponent<AudioSource>();
+        if (audioSource == null)
+        {
+            audioSource = gameObject.AddComponent<AudioSource>();
+        }
     }
 
     public void TakeDamage(int damage)
     {
+        if (isDead) return;
+
         currentHealth -= damage;
+
+        if (hitSound != null && audioSource != null)
+        {
+            audioSource.PlayOneShot(hitSound, 0.5f);
+        }
 
         if (currentHealth <= 0)
         {
@@ -31,28 +56,68 @@ public class EnemyHealth : MonoBehaviour
 
     void Die()
     {
-        // Wywo³aj zdarzenie œmierci PRZED zniszczeniem obiektu
-        OnEnemyDeath?.Invoke();
+        if (isDead) return;
 
-        // Efekt œmierci
-       /* if (deathEffect != null)
-        {
-            Instantiate(deathEffect, transform.position, transform.rotation);
-        }
+        isDead = true;
+        Debug.Log($"{gameObject.name} - EnemyHealth.Die() called");
 
-        // DŸwiêk œmierci
-        if (deathSound != null)
-        {
-            AudioSource.PlayClipAtPoint(deathSound, transform.position);
-        }
-*/
-        // Zniszcz obiekt
-        Destroy(gameObject);
+        // 1. Wyï¿½ï¿½cz fizykï¿½
+        DisablePhysicsAndCollision();
+
+        // 2. Wywoï¿½aj OBA eventy (dla kompatybilnoï¿½ci)
+        OnEnemyDeath?.Invoke(); // Stara wersja
+        OnEnemyDeathWithObject?.Invoke(gameObject); // Nowa wersja
+
+        // 3. Efekty
+        PlayDeathEffects();
+
+        // 4. Zniszcz
+        Destroy(gameObject, 0.5f);
     }
 
-    // Metoda pomocnicza do sprawdzenia czy przeciwnik ¿yje
+    void DisablePhysicsAndCollision()
+    {
+        if (enemyCollider != null)
+        {
+            enemyCollider.enabled = false;
+        }
+
+        if (enemyRigidbody != null)
+        {
+            enemyRigidbody.linearVelocity = Vector3.zero;
+            enemyRigidbody.angularVelocity = Vector3.zero;
+            enemyRigidbody.isKinematic = true;
+            enemyRigidbody.detectCollisions = false;
+        }
+
+        if (enemyRenderer != null)
+        {
+            enemyRenderer.enabled = false;
+        }
+
+        Collider[] allColliders = GetComponentsInChildren<Collider>();
+        foreach (Collider col in allColliders)
+        {
+            col.enabled = false;
+        }
+    }
+
+    void PlayDeathEffects()
+    {
+        if (deathSound != null)
+        {
+            AudioSource.PlayClipAtPoint(deathSound, transform.position, 0.7f);
+        }
+
+        if (deathEffect != null)
+        {
+            GameObject effect = Instantiate(deathEffect, transform.position, Quaternion.identity);
+            Destroy(effect, 3f);
+        }
+    }
+
     public bool IsAlive()
     {
-        return currentHealth > 0;
+        return !isDead;
     }
 }

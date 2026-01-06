@@ -8,6 +8,7 @@ public class Shotgun : MonoBehaviour
 {
     [Header("Audio")]
     [SerializeField] private AudioSource shotgunSound;
+    [SerializeField] private AudioClip reloadSound;
 
     [Header("Shooting Settings")]
     [SerializeField] private bool addBulletSpread = true;
@@ -16,7 +17,19 @@ public class Shotgun : MonoBehaviour
     [SerializeField] private LayerMask mask = -1;
     [SerializeField] private float bulletSpeed = 100;
     [SerializeField] private int pelletCount = 6;
-    [SerializeField] private int damagePerPellet = 1;
+    [SerializeField] private int damagePerPellet = 25;
+
+    public bool automaticFire = false;
+
+    [Header("Aiming Settings")]
+    [SerializeField] private bool canAim = true;
+    [SerializeField] private Vector3 hipOffset = new Vector3(0.4f, -0.25f, 0.6f);
+    [SerializeField] private Vector3 aimOffset = new Vector3(0f, -0.15f, 0.5f);
+    [SerializeField] private float aimSpeed = 7f;
+    [SerializeField] private float aimFOV = 50f;
+    [SerializeField] private float hipFOV = 60f;
+    private bool isAiming = false;
+    private Camera weaponCamera;
 
     [Header("Visual Effects")]
     [SerializeField] private ParticleSystem shootingSystem;
@@ -34,132 +47,265 @@ public class Shotgun : MonoBehaviour
     public TextMeshProUGUI BulletsText;
     public GameObject BulletCounter;
 
-    [Header("Camera Follow")]
+    [Header("Camera")]
     [SerializeField] private Transform cameraTransform;
-    [SerializeField] private Vector3 originalLocalPosition; // Zachowaj oryginaln¹ pozycjê
-    [SerializeField] private bool useOriginalPosition = true;
 
-    // Prywatne zmienne
     private Animator animator;
     private float lastShootTime;
-    private bool canShoot;
+    private bool canShoot = true;
+    private bool isReloading = false;
+    private Vector3 currentOffset;
+    private Vector3 targetOffset;
+    private Vector3 velocity = Vector3.zero;
 
-    private void Start()
+    void Start()
+    {
+        InitializeShotgun();
+    }
+
+    void Awake()
+    {
+        animator = GetComponent<Animator>();
+    }
+
+    void Update()
+    {
+        HandleAiming();
+        HandleInput();
+
+        // JEDYNA METODA POZYCJONUJ¥CA
+        UpdateWeaponPosition();
+
+        UpdateAmmoUI();
+    }
+
+    private void InitializeShotgun()
     {
         BulletCount = MaxBullets;
-        canShoot = true;
-        UpdateAmmoUI();
+        currentOffset = hipOffset;
+        targetOffset = hipOffset;
 
         if (hitmarkerImage != null)
             hitmarkerImage.enabled = false;
 
         if (cameraTransform == null)
         {
-            cameraTransform = Camera.main.transform;
+            FindCamera();
         }
 
-        // Zachowaj oryginaln¹ pozycjê lokaln¹
-        if (useOriginalPosition)
+        weaponCamera = GetComponentInChildren<Camera>();
+        if (weaponCamera == null && cameraTransform != null)
         {
-            originalLocalPosition = transform.localPosition;
+            weaponCamera = cameraTransform.GetComponent<Camera>();
+        }
+
+        if (cameraTransform != null)
+        {
+            SetInitialPosition();
         }
     }
 
-    private void Awake()
+    private void SetInitialPosition()
     {
-        animator = GetComponent<Animator>();
+        Vector3 desiredPosition = cameraTransform.position +
+                                 cameraTransform.right * hipOffset.x +
+                                 cameraTransform.up * hipOffset.y +
+                                 cameraTransform.forward * hipOffset.z;
+
+        transform.position = desiredPosition;
+        transform.rotation = cameraTransform.rotation;
     }
 
-    private void Update()
+    private void UpdateWeaponPosition()
     {
-        if (Input.GetKeyDown(KeyCode.R))
-        {
-            BulletCount = MaxBullets;
-            UpdateAmmoUI();
-        }
+        if (cameraTransform == null) return;
 
-        if (BulletCount <= 0)
+        currentOffset = Vector3.SmoothDamp(
+            currentOffset,
+            targetOffset,
+            ref velocity,
+            0.1f,
+            aimSpeed
+        );
+
+        Vector3 desiredPosition = cameraTransform.position +
+                                 cameraTransform.right * currentOffset.x +
+                                 cameraTransform.up * currentOffset.y +
+                                 cameraTransform.forward * currentOffset.z;
+
+        transform.position = desiredPosition;
+        transform.rotation = cameraTransform.rotation;
+    }
+
+    private void HandleAiming()
+    {
+        if (!canAim || cameraTransform == null) return;
+
+        if (Input.GetMouseButtonDown(1))
         {
-            BulletCount = 0;
-            canShoot = false;
+            isAiming = true;
+            addBulletSpread = false;
+            bulletSpreadVariance = new Vector3(0.05f, 0.05f, 0.05f);
+            targetOffset = aimOffset;
+
+            if (weaponCamera != null)
+            {
+                weaponCamera.fieldOfView = aimFOV;
+            }
+        }
+        else if (Input.GetMouseButtonUp(1))
+        {
+            isAiming = false;
+            addBulletSpread = true;
+            bulletSpreadVariance = new Vector3(0.1f, 0.1f, 0.1f);
+            targetOffset = hipOffset;
+
+            if (weaponCamera != null)
+            {
+                weaponCamera.fieldOfView = hipFOV;
+            }
+        }
+    }
+
+    private void HandleInput()
+    {
+        if (isReloading || cameraTransform == null) return;
+
+        if (automaticFire)
+        {
+            if (Input.GetMouseButton(0) && canShoot && BulletCount > 0)
+            {
+                if (Time.time - lastShootTime > shootDelay)
+                {
+                    Shoot();
+                }
+            }
         }
         else
         {
-            canShoot = true;
+            if (Input.GetMouseButtonDown(0) && canShoot && BulletCount > 0)
+            {
+                Shoot();
+            }
         }
 
-        UpdateAmmoUI();
-        FollowCamera();
+        if (Input.GetKeyDown(KeyCode.R) && BulletCount < MaxBullets)
+        {
+            StartCoroutine(Reload());
+        }
+
+        if (BulletCount <= 0 && !isReloading)
+        {
+            StartCoroutine(Reload());
+        }
     }
 
-    private void FollowCamera()
+    private void FindCamera()
     {
-        if (cameraTransform != null)
+        Camera mainCamera = Camera.main;
+        if (mainCamera != null)
         {
-            // Ustaw pozycjê i rotacjê na kamerze, zachowuj¹c oryginaln¹ pozycjê lokaln¹
-            transform.position = cameraTransform.position;
-            transform.rotation = cameraTransform.rotation;
-
-            // Zachowaj oryginaln¹ pozycjê lokaln¹ wzglêdem kamery
-            if (useOriginalPosition)
+            cameraTransform = mainCamera.transform;
+        }
+        else
+        {
+            Camera[] cameras = FindObjectsByType<Camera>(FindObjectsSortMode.None);
+            if (cameras.Length > 0)
             {
-                transform.localPosition = originalLocalPosition;
+                cameraTransform = cameras[0].transform;
             }
         }
     }
+
+    // USUNIÊTA METODA FollowCamera() - powodowa³a konflikt
 
     public void Shoot()
     {
-        if (lastShootTime + shootDelay < Time.time && canShoot)
-        {
-            BulletCount--;
-            UpdateAmmoUI();
+        if (Time.time - lastShootTime < shootDelay || !canShoot || isReloading || BulletCount <= 0)
+            return;
 
-            if (shotgunSound != null)
-                shotgunSound.Play();
+        BulletCount--;
+        lastShootTime = Time.time;
+        UpdateAmmoUI();
 
+        if (shotgunSound != null)
+            shotgunSound.Play();
+
+        if (shootingSystem != null)
             shootingSystem.Play();
 
-            for (int i = 0; i < pelletCount; i++)
+        bool enemyHit = false;
+
+        for (int i = 0; i < pelletCount; i++)
+        {
+            Vector3 direction = GetDirection();
+
+            if (Physics.Raycast(bulletSpawnPoint.position, direction, out RaycastHit hit, float.MaxValue, mask))
             {
-                Vector3 direction = GetDirection();
+                TrailRenderer trail = Instantiate(bulletTrail, bulletSpawnPoint.position, Quaternion.identity);
+                StartCoroutine(SpawnTrail(trail, hit.point, hit.normal, true));
 
-                if (Physics.Raycast(bulletSpawnPoint.position, direction, out RaycastHit hit, float.MaxValue, mask))
+                if (hit.collider.CompareTag("Enemy"))
                 {
-                    TrailRenderer trail = Instantiate(bulletTrail, bulletSpawnPoint.position, Quaternion.identity);
-                    StartCoroutine(SpawnTrail(trail, hit.point, hit.normal, true));
+                    enemyHit = true;
 
-                    if (hit.collider.CompareTag("Enemy"))
+                    EnemyHealth enemyHealth = hit.collider.GetComponent<EnemyHealth>();
+                    if (enemyHealth == null)
                     {
-                        ShowHitmarker();
-                        EnemyHealth enemyHealth = hit.collider.GetComponent<EnemyHealth>();
-                        if (enemyHealth != null)
-                        {
-                            enemyHealth.TakeDamage(damagePerPellet);
-                        }
+                        enemyHealth = hit.collider.GetComponentInParent<EnemyHealth>();
+                    }
+
+                    if (enemyHealth != null)
+                    {
+                        enemyHealth.TakeDamage(damagePerPellet);
                     }
                 }
-                else
-                {
-                    TrailRenderer trail = Instantiate(bulletTrail, bulletSpawnPoint.position, Quaternion.identity);
-                    StartCoroutine(SpawnTrail(trail, bulletSpawnPoint.position + direction * 100, Vector3.zero, false));
-                }
             }
+            else
+            {
+                TrailRenderer trail = Instantiate(bulletTrail, bulletSpawnPoint.position, Quaternion.identity);
+                StartCoroutine(SpawnTrail(trail, bulletSpawnPoint.position + direction * 100, Vector3.zero, false));
+            }
+        }
 
-            lastShootTime = Time.time;
+        if (enemyHit && hitmarkerImage != null)
+        {
+            ShowHitmarker();
         }
     }
 
-    private Vector3 GetDirection()
+    IEnumerator Reload()
+    {
+        isReloading = true;
+        canShoot = false;
+
+        if (reloadSound != null && shotgunSound != null)
+        {
+            shotgunSound.PlayOneShot(reloadSound, 0.7f);
+        }
+
+        if (animator != null)
+            animator.SetTrigger("Reload");
+
+        yield return new WaitForSeconds(1.5f);
+
+        BulletCount = MaxBullets;
+        isReloading = false;
+        canShoot = true;
+        UpdateAmmoUI();
+    }
+
+    Vector3 GetDirection()
     {
         Vector3 direction = bulletSpawnPoint.forward;
 
         if (addBulletSpread)
         {
+            float spreadMultiplier = isAiming ? 0.5f : 1f;
             direction += new Vector3(
-                Random.Range(-bulletSpreadVariance.x, bulletSpreadVariance.x),
-                Random.Range(-bulletSpreadVariance.y, bulletSpreadVariance.y),
-                Random.Range(-bulletSpreadVariance.z, bulletSpreadVariance.z)
+                Random.Range(-bulletSpreadVariance.x, bulletSpreadVariance.x) * spreadMultiplier,
+                Random.Range(-bulletSpreadVariance.y, bulletSpreadVariance.y) * spreadMultiplier,
+                Random.Range(-bulletSpreadVariance.z, bulletSpreadVariance.z) * spreadMultiplier
             );
             direction.Normalize();
         }
@@ -167,7 +313,7 @@ public class Shotgun : MonoBehaviour
         return direction;
     }
 
-    private IEnumerator SpawnTrail(TrailRenderer trail, Vector3 hitPoint, Vector3 hitNormal, bool madeImpact)
+    IEnumerator SpawnTrail(TrailRenderer trail, Vector3 hitPoint, Vector3 hitNormal, bool madeImpact)
     {
         Vector3 startPosition = trail.transform.position;
         float distance = Vector3.Distance(trail.transform.position, hitPoint);
@@ -182,15 +328,16 @@ public class Shotgun : MonoBehaviour
 
         trail.transform.position = hitPoint;
 
-        if (madeImpact)
+        if (madeImpact && impactParticleSystem != null)
         {
-            Instantiate(impactParticleSystem, hitPoint, Quaternion.LookRotation(hitNormal));
+            GameObject impact = Instantiate(impactParticleSystem.gameObject, hitPoint, Quaternion.LookRotation(hitNormal));
+            Destroy(impact, 2f);
         }
 
         Destroy(trail.gameObject, trail.time);
     }
 
-    private void ShowHitmarker()
+    void ShowHitmarker()
     {
         if (hitmarkerImage != null)
         {
@@ -199,22 +346,41 @@ public class Shotgun : MonoBehaviour
         }
     }
 
-    private IEnumerator HideHitmarkerAfterDelay()
+    IEnumerator HideHitmarkerAfterDelay()
     {
         yield return new WaitForSeconds(hitmarkerDisplayTime);
         if (hitmarkerImage != null)
             hitmarkerImage.enabled = false;
     }
 
-    private void UpdateAmmoUI()
+    void UpdateAmmoUI()
     {
         if (BulletsText != null)
-            BulletsText.text = BulletCount.ToString() + " / " + MaxBullets.ToString();
+            BulletsText.text = $"{BulletCount} / {MaxBullets}";
+    }
+
+    public void SetCamera(Transform newCamera)
+    {
+        cameraTransform = newCamera;
+
+        if (cameraTransform != null)
+        {
+            weaponCamera = cameraTransform.GetComponent<Camera>();
+            SetInitialPosition();
+        }
+    }
+
+    public void ResetToOriginalPosition()
+    {
+        if (cameraTransform != null)
+        {
+            SetInitialPosition();
+        }
     }
 
     public void SetDamage(int newDamage)
     {
-        damagePerPellet = newDamage;
+        damagePerPellet = Mathf.Max(1, newDamage);
     }
 
     public void IncreaseDamage(int damageIncrease)
@@ -222,19 +388,75 @@ public class Shotgun : MonoBehaviour
         damagePerPellet += damageIncrease;
     }
 
-    public void SetCamera(Transform newCamera)
+    public bool IsReloading()
     {
-        cameraTransform = newCamera;
+        return isReloading;
     }
 
-    // Metoda do zresetowania pozycji do oryginalnej
-    public void ResetToOriginalPosition()
+    public bool CanShoot()
     {
-        if (cameraTransform != null)
+        return canShoot && BulletCount > 0 && !isReloading;
+    }
+
+    public void SetAmmo(int newBulletCount, int newMaxBullets = -1)
+    {
+        BulletCount = Mathf.Clamp(newBulletCount, 0, MaxBullets);
+
+        if (newMaxBullets > 0)
         {
-            transform.position = cameraTransform.position;
-            transform.rotation = cameraTransform.rotation;
-            transform.localPosition = originalLocalPosition;
+            MaxBullets = newMaxBullets;
+        }
+
+        UpdateAmmoUI();
+    }
+
+    public void AddAmmo(int amount)
+    {
+        BulletCount = Mathf.Clamp(BulletCount + amount, 0, MaxBullets);
+        UpdateAmmoUI();
+    }
+
+    public void SetAiming(bool aim)
+    {
+        if (canAim)
+        {
+            isAiming = aim;
+            addBulletSpread = !aim;
+            bulletSpreadVariance = aim ? new Vector3(0.05f, 0.05f, 0.05f) : new Vector3(0.1f, 0.1f, 0.1f);
+            targetOffset = aim ? aimOffset : hipOffset;
+
+            if (weaponCamera != null)
+            {
+                weaponCamera.fieldOfView = aim ? aimFOV : hipFOV;
+            }
+        }
+    }
+
+    public bool IsAiming()
+    {
+        return isAiming;
+    }
+
+    public void SetAutomaticFire(bool automatic)
+    {
+        automaticFire = automatic;
+    }
+
+    public void SetHipOffset(Vector3 offset)
+    {
+        hipOffset = offset;
+        if (!isAiming)
+        {
+            targetOffset = offset;
+        }
+    }
+
+    public void SetAimOffset(Vector3 offset)
+    {
+        aimOffset = offset;
+        if (isAiming)
+        {
+            targetOffset = offset;
         }
     }
 }

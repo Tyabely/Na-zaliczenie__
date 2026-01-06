@@ -1,5 +1,6 @@
 ﻿using UnityEngine;
 using System.Collections;
+using TMPro;
 
 public class PlayerAction : MonoBehaviour
 {
@@ -11,7 +12,7 @@ public class PlayerAction : MonoBehaviour
 
     [Header("UI Objects")]
     public GameObject RiflePng;
-    public GameObject Rifle; // DODANO: Referencja do obiektu karabinu
+    public GameObject Rifle;
     public GameObject reloadpng;
     public GameObject Gun;
     public GameObject Shotgun;
@@ -21,481 +22,673 @@ public class PlayerAction : MonoBehaviour
     [Header("Weapon Audio Clips")]
     [SerializeField] private AudioClip gunShotClip;
     [SerializeField] private AudioClip shotgunShotClip;
-    [SerializeField] private AudioClip rifleShotClip; // DODANO: Dźwięk karabinu
+    [SerializeField] private AudioClip rifleShotClip;
     [SerializeField] private AudioClip gunReloadClip;
     [SerializeField] private AudioClip shotgunReloadClip;
-    [SerializeField] private AudioClip rifleReloadClip; // DODANO: Dźwięk przeładowania karabinu
+    [SerializeField] private AudioClip rifleReloadClip;
 
     [Header("Shooting Settings")]
     private bool canShoot = true;
-    private float shootDelay = 0.5f;
+    private float shootDelay = 0.15f;
 
     [Header("Reload Settings")]
     private bool isReloading = false;
     private float currentReloadTime = 0f;
     private float gunReloadTime = 3.0f;
     private float shotgunReloadTime = 5.0f;
-    private float rifleReloadTime = 2.5f; // DODANO: Czas przeładowania karabinu
+    private float rifleReloadTime = 2.5f;
     private float currentReloadDuration;
     private GameObject currentReloadSoundObject;
 
+    [Header("Current Weapon")]
+    private int currentWeaponType = 1;
+    private MonoBehaviour currentWeaponScript;
+
+    [Header("Aiming Settings")]
+    [SerializeField] private float aimFOV = 40f;
+    [SerializeField] private float normalFOV = 60f;
+    private bool isAiming = false;
+
     void Start()
     {
-        // Znajdź komponenty broni jeśli nie są przypisane
-        if (rifle == null) // DODANO: Szukaj karabinu
-        {
-            rifle = GetComponentInChildren<Rifle>(true);
-        }
-        if (shotgun == null)
-        {
-            shotgun = GetComponentInChildren<Shotgun>(true);
-        }
-        if (gun == null)
-        {
-            gun = GetComponentInChildren<Gun>(true);
-        }
+        InitializeWeapons();
+    }
 
-        // Znajdź kamerę jeśli nie jest przypisana
+    void InitializeWeapons()
+    {
+        FindWeaponsIfNull();
+
         if (playerCamera == null)
         {
             playerCamera = Camera.main;
             if (playerCamera == null)
             {
-                playerCamera = Object.FindAnyObjectByType<Camera>();
+                Camera[] cameras = FindObjectsByType<Camera>(FindObjectsSortMode.None);
+                if (cameras.Length > 0)
+                {
+                    playerCamera = cameras[0];
+                    Debug.LogWarning("Using non-main camera!");
+                }
             }
         }
 
-        // Przekaż referencję kamery do broni
-        if (gun != null && playerCamera != null)
-            gun.SetCamera(playerCamera.transform);
-        if (shotgun != null && playerCamera != null)
-            shotgun.SetCamera(playerCamera.transform);
-        if (rifle != null && playerCamera != null) // DODANO: Dla karabinu
-            rifle.SetCamera(playerCamera.transform);
+        AssignCameraToWeapons();
+        AssignPlayerToWeapons();
 
-        // Ukryj reload UI na starcie
         if (reloadpng != null)
             reloadpng.SetActive(false);
+
+        SetActiveWeapon(1);
+    }
+
+    void FindWeaponsIfNull()
+    {
+        if (rifle == null)
+        {
+            rifle = GetComponentInChildren<Rifle>(true);
+            if (rifle != null) Debug.Log("Found Rifle in children");
+        }
+
+        if (shotgun == null)
+        {
+            shotgun = GetComponentInChildren<Shotgun>(true);
+            if (shotgun != null) Debug.Log("Found Shotgun in children");
+        }
+
+        if (gun == null)
+        {
+            gun = GetComponentInChildren<Gun>(true);
+            if (gun != null) Debug.Log("Found Gun in children");
+        }
+    }
+
+    void AssignCameraToWeapons()
+    {
+        if (playerCamera == null)
+        {
+            Debug.LogError("No camera found!");
+            return;
+        }
+
+        Debug.Log($"Assigning camera: {playerCamera.name}");
+
+        if (gun != null)
+        {
+            gun.SetCamera(playerCamera.transform);
+            Debug.Log("Camera assigned to Gun");
+        }
+
+        if (shotgun != null)
+        {
+            shotgun.SetCamera(playerCamera.transform);
+            Debug.Log("Camera assigned to Shotgun");
+        }
+
+        if (rifle != null)
+        {
+            rifle.SetCamera(playerCamera.transform);
+            Debug.Log("Camera assigned to Rifle");
+        }
+    }
+
+    // DODANE: Przypisanie gracza do broni
+    void AssignPlayerToWeapons()
+    {
+        Transform playerTransform = this.transform;
+
+        if (gun != null)
+        {
+            gun.SendMessage("SetPlayer", playerTransform, SendMessageOptions.DontRequireReceiver);
+            Debug.Log("Player assigned to Gun");
+        }
+
+        // To samo dla innych broni jeśli potrzebują
+        // rifle?.SendMessage("SetPlayer", playerTransform, SendMessageOptions.DontRequireReceiver);
+        // shotgun?.SendMessage("SetPlayer", playerTransform, SendMessageOptions.DontRequireReceiver);
     }
 
     void Update()
     {
-        // Przełączanie broni (1 - pistolet, 2 - strzelba, 3 - karabin)
+        HandleAiming();
         HandleWeaponSwitching();
 
-        // Przeładowanie po wciśnięciu R
-        if (UnityEngine.Input.GetKeyDown(KeyCode.R) && !isReloading)
+        if (Input.GetKeyDown(KeyCode.R) && !isReloading)
         {
             StartReload();
         }
 
-        // Obsługa przeładowania z deltaTime
         HandleReloadWithDeltaTime();
+        HandleShooting();
     }
 
-    private void HandleWeaponSwitching()
+    // DODANE: Obsługa celowania
+    void HandleAiming()
     {
-        if (UnityEngine.Input.GetKeyDown(UnityEngine.KeyCode.Alpha1))
+        if (Input.GetMouseButtonDown(1))
         {
-            if (!isReloading)
+            isAiming = true;
+            SetWeaponAiming(true);
+
+            if (playerCamera != null)
             {
-                SetActiveWeapon(1); // Pistolet
+                playerCamera.fieldOfView = aimFOV;
             }
+
+            Debug.Log("Aiming enabled");
         }
-        else if (UnityEngine.Input.GetKeyDown(UnityEngine.KeyCode.Alpha2))
+        else if (Input.GetMouseButtonUp(1))
         {
-            if (!isReloading)
+            isAiming = false;
+            SetWeaponAiming(false);
+
+            if (playerCamera != null)
             {
-                SetActiveWeapon(2); // Strzelba
+                playerCamera.fieldOfView = normalFOV;
             }
-        }
-        else if (UnityEngine.Input.GetKeyDown(UnityEngine.KeyCode.Alpha3))
-        {
-            if (!isReloading)
-            {
-                SetActiveWeapon(3); // Karabin
-            }
+
+            Debug.Log("Aiming disabled");
         }
     }
 
-    private void SetActiveWeapon(int weaponType)
+    void SetWeaponAiming(bool aiming)
     {
-        // 1 = pistolet, 2 = strzelba, 3 = karabin
-        Gun.SetActive(weaponType == 1);
-        GunPng.SetActive(weaponType == 1);
-        Shotgun.SetActive(weaponType == 2);
-        ShotgunPng.SetActive(weaponType == 2);
-        Rifle.SetActive(weaponType == 3); // DODANO: Aktywacja karabinu
-        RiflePng.SetActive(weaponType == 3);
+        switch (currentWeaponType)
+        {
+            case 1: // Pistolet
+                if (gun != null) gun.SetAiming(aiming);
+                break;
+            case 2: // Strzelba
+                if (shotgun != null) shotgun.SetAiming(aiming);
+                break;
+            case 3: // Karabin
+                if (rifle != null) rifle.SetAiming(aiming);
+                break;
+        }
+    }
+
+    void HandleWeaponSwitching()
+    {
+        if (Input.GetKeyDown(KeyCode.Alpha1))
+        {
+            SetActiveWeapon(1);
+        }
+        else if (Input.GetKeyDown(KeyCode.Alpha2))
+        {
+            SetActiveWeapon(2);
+        }
+        else if (Input.GetKeyDown(KeyCode.Alpha3))
+        {
+            SetActiveWeapon(3);
+        }
+    }
+
+    void SetActiveWeapon(int weaponType)
+    {
+        if (isReloading)
+        {
+            Debug.Log("Cannot switch weapon while reloading!");
+            return;
+        }
+
+        currentWeaponType = weaponType;
+
+        if (Gun != null)
+        {
+            Gun.SetActive(weaponType == 1);
+            if (weaponType == 1) currentWeaponScript = gun;
+        }
+
+        if (Shotgun != null)
+        {
+            Shotgun.SetActive(weaponType == 2);
+            if (weaponType == 2) currentWeaponScript = shotgun;
+        }
+
+        if (Rifle != null)
+        {
+            Rifle.SetActive(weaponType == 3);
+            if (weaponType == 3) currentWeaponScript = rifle;
+        }
+
+        if (GunPng != null) GunPng.SetActive(weaponType == 1);
+        if (ShotgunPng != null) ShotgunPng.SetActive(weaponType == 2);
+        if (RiflePng != null) RiflePng.SetActive(weaponType == 3);
+
+        Debug.Log($"Switched to weapon: {weaponType}");
+
+        shootDelay = weaponType switch
+        {
+            1 => 0.5f,
+            2 => 0.5f,
+            3 => 0.15f,
+            _ => 0.5f
+        };
+
+        // Zatrzymaj celowanie przy zmianie broni
+        if (isAiming)
+        {
+            SetWeaponAiming(false);
+            isAiming = false;
+            if (playerCamera != null)
+                playerCamera.fieldOfView = normalFOV;
+        }
+    }
+
+    void HandleShooting()
+    {
+        if (!canShoot || isReloading) return;
+
+        if (currentWeaponType == 3 && rifle != null && rifle.automaticFire)
+        {
+            if (Input.GetMouseButton(0))
+            {
+                if (rifle.BulletCount > 0 && !rifle.IsReloading())
+                {
+                    rifle.Shoot();
+                    CreateRifleSound();
+                    StartCoroutine(ShootDelay());
+                }
+                else if (rifle.BulletCount <= 0 && !isReloading)
+                {
+                    StartReload();
+                }
+            }
+        }
+        else if (Input.GetMouseButtonDown(0))
+        {
+            OnShoot();
+        }
     }
 
     public void OnShoot()
     {
         if (!canShoot || isReloading) return;
 
-        if (Gun.activeInHierarchy)
+        switch (currentWeaponType)
         {
-            HandleGunShoot();
-        }
-        else if (Shotgun.activeInHierarchy)
-        {
-            HandleShotgunShoot();
-        }
-        else if (Rifle.activeInHierarchy) // DODANO: Strzelanie z karabinu
-        {
-            HandleRifleShoot();
+            case 1:
+                HandleGunShoot();
+                break;
+            case 2:
+                HandleShotgunShoot();
+                break;
+            case 3:
+                HandleRifleSingleShot();
+                break;
         }
     }
 
-    private void HandleGunShoot()
+    void HandleGunShoot()
     {
-        int currentGunAmmo = GetGunAmmo();
+        if (gun == null) return;
 
-        if (currentGunAmmo > 0)
+        if (gun.BulletCount > 0 && gun.canShoot && !gun.isReloading)
         {
             gun.Shoot();
             CreateGunSound();
             StartCoroutine(ShootDelay());
 
-            if (GetGunAmmo() <= 0)
+            if (gun.BulletCount <= 0)
             {
-               // Debug.Log("Pistolet: brak amunicji!");
+                Debug.Log("Pistolet: brak amunicji!");
+                TryAutoReload();
             }
+        }
+        else if (gun.isReloading)
+        {
+            Debug.Log("Pistolet: trwa przeładowanie!");
         }
         else
         {
-          //  Debug.Log("Pistolet: pusty magazynek!");
+            Debug.Log("Pistolet: pusty magazynek!");
+            TryAutoReload();
         }
     }
 
-    private void HandleShotgunShoot()
+    void HandleShotgunShoot()
     {
-        if (shotgun != null)
-        {
-            int currentShotgunAmmo = GetShotgunAmmo();
+        if (shotgun == null) return;
 
-            if (currentShotgunAmmo > 0)
-            {
-                StartCoroutine(ShootShotgunBurst());
-            }
-            else
-            {
-              //  Debug.Log("Strzelba: brak amunicji!");
-            }
-        }
-        else
-        {
-          //  Debug.LogError("Shotgun reference is null!");
-        }
-    }
-
-    private IEnumerator ShootShotgunBurst()
-    {
-        if (!canShoot) yield break;
-
-        canShoot = false;
-
-        // Strzelba strzela serią (3 pociski na raz)
-        for (int i = 0; i < 3; i++)
+        if (shotgun.BulletCount > 0 && shotgun.CanShoot())
         {
             shotgun.Shoot();
-            yield return new WaitForSeconds(0.1f);
-        }
+            CreateShotgunSound();
+            StartCoroutine(ShootDelay());
 
-        if (GetShotgunAmmo() <= 0)
+            if (shotgun.BulletCount <= 0)
+            {
+                Debug.Log("Strzelba: brak amunicji!");
+                TryAutoReload();
+            }
+        }
+        else if (!shotgun.CanShoot())
         {
-           // Debug.Log("Strzelba: brak amunicji!");
+            Debug.Log("Strzelba: nie może strzelać!");
+            TryAutoReload();
         }
-
-        yield return new WaitForSeconds(shootDelay);
-        canShoot = true;
+        else
+        {
+            Debug.Log("Strzelba: pusty magazynek!");
+            TryAutoReload();
+        }
     }
 
-    private void HandleRifleShoot() // DODANO: Metoda strzelania karabinem
+    void HandleRifleSingleShot()
     {
-        int currentRifleAmmo = GetRifleAmmo();
+        if (rifle == null || rifle.automaticFire) return;
 
-        if (currentRifleAmmo > 0)
+        if (rifle.BulletCount > 0 && !rifle.IsReloading())
         {
             rifle.Shoot();
             CreateRifleSound();
             StartCoroutine(ShootDelay());
 
-            if (GetRifleAmmo() <= 0)
+            if (rifle.BulletCount <= 0)
             {
-              //  Debug.Log("Karabin: brak amunicji!");
+                Debug.Log("Karabin: brak amunicji!");
+                TryAutoReload();
             }
+        }
+        else if (rifle.IsReloading())
+        {
+            Debug.Log("Karabin: trwa przeładowanie!");
         }
         else
         {
-          //  Debug.Log("Karabin: pusty magazynek!");
+            Debug.Log("Karabin: pusty magazynek!");
+            TryAutoReload();
         }
     }
 
-    private IEnumerator ShootDelay()
+    void TryAutoReload()
+    {
+        if (!isReloading)
+        {
+            StartReload();
+        }
+    }
+
+    IEnumerator ShootDelay()
     {
         canShoot = false;
         yield return new WaitForSeconds(shootDelay);
         canShoot = true;
     }
 
-    private void HandleReloadWithDeltaTime()
+    void StartReload()
     {
-        if (isReloading)
+        bool needsReload = currentWeaponType switch
         {
-            currentReloadTime += Time.deltaTime;
+            1 => gun != null && gun.BulletCount < gun.MaxBullets,
+            2 => shotgun != null && shotgun.BulletCount < shotgun.MaxBullets,
+            3 => rifle != null && rifle.BulletCount < rifle.MaxBullets,
+            _ => false
+        };
 
-            // Aktualizuj postęp w konsoli
-            float progress = currentReloadTime / currentReloadDuration;
-            UpdateReloadUI(progress);
-
-            // Sprawdź czy przeładowanie zakończone
-            if (currentReloadTime >= currentReloadDuration)
-            {
-                CompleteReload();
-                isReloading = false;
-                currentReloadTime = 0f;
-
-                // Zatrzymaj dźwięk przeładowania
-                if (currentReloadSoundObject != null)
-                {
-                    Destroy(currentReloadSoundObject);
-                    currentReloadSoundObject = null;
-                }
-            }
+        if (!needsReload)
+        {
+            Debug.Log("Broń już ma pełny magazynek!");
+            return;
         }
-    }
 
-    private void StartReload()
-    {
         if (reloadpng != null)
             reloadpng.SetActive(true);
 
         isReloading = true;
         currentReloadTime = 0f;
 
-        // Ustaw odpowiedni czas przeładowania w zależności od aktywnej broni
-        if (Gun.activeInHierarchy)
+        switch (currentWeaponType)
         {
-            currentReloadDuration = gunReloadTime;
-           // Debug.Log("Rozpoczęto przeładowanie pistoletu (3s)...");
-            PlayGunReloadSound();
-        }
-        else if (Shotgun.activeInHierarchy)
-        {
-            currentReloadDuration = shotgunReloadTime;
-           // Debug.Log("Rozpoczęto przeładowanie strzelby (5s)...");
-            PlayShotgunReloadSound();
-        }
-        else if (Rifle.activeInHierarchy) // DODANO: Przeładowanie karabinu
-        {
-            currentReloadDuration = rifleReloadTime;
-           // Debug.Log("Rozpoczęto przeładowanie karabinu (2.5s)...");
-            PlayRifleReloadSound();
-        }
-        else
-        {
-            // Jeśli żadna broń nie jest aktywna, przeładuj domyślnie pistolet
-            currentReloadDuration = gunReloadTime;
-           // Debug.Log("Rozpoczęto przeładowanie (3s)...");
-            PlayGunReloadSound();
+            case 1:
+                currentReloadDuration = gunReloadTime;
+                Debug.Log("Rozpoczęto przeładowanie pistoletu (3s)...");
+                PlayGunReloadSound();
+                break;
+            case 2:
+                currentReloadDuration = shotgunReloadTime;
+                Debug.Log("Rozpoczęto przeładowanie strzelby (5s)...");
+                PlayShotgunReloadSound();
+                break;
+            case 3:
+                currentReloadDuration = rifleReloadTime;
+                Debug.Log("Rozpoczęto przeładowanie karabinu (2.5s)...");
+                PlayRifleReloadSound();
+                break;
         }
     }
 
-    private void CompleteReload()
+    void HandleReloadWithDeltaTime()
+    {
+        if (!isReloading) return;
+
+        currentReloadTime += Time.deltaTime;
+
+        float progress = Mathf.Clamp01(currentReloadTime / currentReloadDuration);
+        UpdateReloadUI(progress);
+
+        if (currentReloadTime >= currentReloadDuration)
+        {
+            CompleteReload();
+        }
+    }
+
+    void CompleteReload()
     {
         if (reloadpng != null)
             reloadpng.SetActive(false);
 
-        // Przeładuj odpowiednią broń
-        if (Gun.activeInHierarchy && gun != null)
+        switch (currentWeaponType)
         {
-            gun.BulletCount = gun.MaxBullets;
-            if (gun.BulletsText != null)
-                gun.BulletsText.text = gun.BulletCount.ToString() + " / " + gun.MaxBullets.ToString();
+            case 1:
+                if (gun != null)
+                {
+                    gun.BulletCount = gun.MaxBullets;
+                    UpdateWeaponAmmoUI(gun);
+                }
+                break;
+            case 2:
+                if (shotgun != null)
+                {
+                    shotgun.BulletCount = shotgun.MaxBullets;
+                    UpdateWeaponAmmoUI(shotgun);
+                }
+                break;
+            case 3:
+                if (rifle != null)
+                {
+                    rifle.BulletCount = rifle.MaxBullets;
+                    UpdateWeaponAmmoUI(rifle);
+                }
+                break;
         }
-        else if (Shotgun.activeInHierarchy && shotgun != null)
-        {
-            shotgun.BulletCount = shotgun.MaxBullets;
-            if (shotgun.BulletsText != null)
-                shotgun.BulletsText.text = shotgun.BulletCount.ToString() + " / " + shotgun.MaxBullets.ToString();
-        }
-        else if (Rifle.activeInHierarchy && rifle != null) // DODANO: Przeładowanie karabinu
-        {
-            // Użyj metody Reload z karabinu jeśli istnieje, lub ustaw bezpośrednio
-            rifle.BulletCount = rifle.MaxBullets;
-            if (rifle.BulletsText != null)
-                rifle.BulletsText.text = rifle.BulletCount.ToString() + " / " + rifle.MaxBullets.ToString();
-        }
 
-        //Debug.Log("Przeładowano broń!");
-    }
+        isReloading = false;
+        currentReloadTime = 0f;
 
-    private void UpdateReloadUI(float progress)
-    {
-        // Możesz dodać pasek postępu w UI
-        //Debug.Log($"Przeładowanie: {progress * 100:F1}%");
-    }
-
-    private void PlayGunReloadSound()
-    {
-        if (gunReloadClip != null)
-        {
-            currentReloadSoundObject = new GameObject("GunReloadSound");
-            AudioSource audioSource = currentReloadSoundObject.AddComponent<AudioSource>();
-
-            audioSource.clip = gunReloadClip;
-            audioSource.volume = 0.6f;
-            audioSource.pitch = 1.0f;
-            audioSource.spatialBlend = 1.0f;
-            audioSource.loop = false;
-
-            audioSource.Play();
-
-            // Zniszcz po zakończeniu dźwięku
-            Destroy(currentReloadSoundObject, gunReloadClip.length + 1f);
-        }
-    }
-
-    private void PlayShotgunReloadSound()
-    {
-        if (shotgunReloadClip != null)
-        {
-            currentReloadSoundObject = new GameObject("ShotgunReloadSound");
-            AudioSource audioSource = currentReloadSoundObject.AddComponent<AudioSource>();
-
-            audioSource.clip = shotgunReloadClip;
-            audioSource.volume = 0.7f;
-            audioSource.pitch = 1.0f;
-            audioSource.spatialBlend = 1.0f;
-            audioSource.loop = false;
-
-            audioSource.Play();
-
-            // Zniszcz po zakończeniu dźwięku
-            Destroy(currentReloadSoundObject, shotgunReloadClip.length + 1f);
-        }
-    }
-
-    private void PlayRifleReloadSound() // DODANO: Dźwięk przeładowania karabinu
-    {
-        if (rifleReloadClip != null)
-        {
-            currentReloadSoundObject = new GameObject("RifleReloadSound");
-            AudioSource audioSource = currentReloadSoundObject.AddComponent<AudioSource>();
-
-            audioSource.clip = rifleReloadClip;
-            audioSource.volume = 0.6f;
-            audioSource.pitch = 1.0f;
-            audioSource.spatialBlend = 1.0f;
-            audioSource.loop = false;
-
-            audioSource.Play();
-
-            // Zniszcz po zakończeniu dźwięku
-            Destroy(currentReloadSoundObject, rifleReloadClip.length + 1f);
-        }
-        else if (gunReloadClip != null) // Fallback na dźwięk pistoletu
-        {
-            PlayGunReloadSound();
-        }
-    }
-
-    private void CreateGunSound()
-    {
-        if (gunShotClip != null)
-        {
-            GameObject soundObject = new GameObject("GunSoundInstance");
-            AudioSource audioSource = soundObject.AddComponent<AudioSource>();
-
-            audioSource.clip = gunShotClip;
-            audioSource.volume = 0.7f;
-            audioSource.pitch = Random.Range(0.95f, 1.05f);
-            audioSource.spatialBlend = 1.0f;
-            audioSource.maxDistance = 50f;
-            audioSource.rolloffMode = AudioRolloffMode.Logarithmic;
-
-            audioSource.Play();
-            Destroy(soundObject, gunShotClip.length + 0.1f);
-        }
-    }
-
-    private void CreateRifleSound() // DODANO: Dźwięk strzału karabinu
-    {
-        if (rifleShotClip != null)
-        {
-            GameObject soundObject = new GameObject("RifleSoundInstance");
-            AudioSource audioSource = soundObject.AddComponent<AudioSource>();
-
-            audioSource.clip = rifleShotClip;
-            audioSource.volume = 0.8f; // Nieco głośniejszy niż pistolet
-            audioSource.pitch = Random.Range(0.95f, 1.05f);
-            audioSource.spatialBlend = 1.0f;
-            audioSource.maxDistance = 50f;
-            audioSource.rolloffMode = AudioRolloffMode.Logarithmic;
-
-            audioSource.Play();
-            Destroy(soundObject, rifleShotClip.length + 0.1f);
-        }
-        else if (gunShotClip != null) // Fallback na dźwięk pistoletu
-        {
-            CreateGunSound();
-        }
-    }
-
-    private void CreateShotgunSound()
-    {
-        if (shotgunShotClip != null)
-        {
-            GameObject soundObject = new GameObject("ShotgunSoundInstance");
-            AudioSource audioSource = soundObject.AddComponent<AudioSource>();
-
-            audioSource.clip = shotgunShotClip;
-            audioSource.volume = 0.8f;
-            audioSource.pitch = Random.Range(0.9f, 1.1f);
-            audioSource.spatialBlend = 1.0f;
-            audioSource.maxDistance = 50f;
-            audioSource.rolloffMode = AudioRolloffMode.Logarithmic;
-
-            audioSource.Play();
-            Destroy(soundObject, shotgunShotClip.length + 0.1f);
-        }
-    }
-
-    private int GetGunAmmo()
-    {
-        if (gun != null) return gun.BulletCount;
-        return 0;
-    }
-
-    private int GetShotgunAmmo()
-    {
-        if (shotgun != null) return shotgun.BulletCount;
-        return 0;
-    }
-
-    private int GetRifleAmmo() // DODANO: Pobieranie amunicji karabinu
-    {
-        if (rifle != null) return rifle.BulletCount;
-        return 0;
-    }
-
-    // Czyszczenie
-    private void OnDestroy()
-    {
         if (currentReloadSoundObject != null)
+        {
             Destroy(currentReloadSoundObject);
+            currentReloadSoundObject = null;
+        }
+
+        Debug.Log("Przeładowano broń!");
     }
 
-    // Metoda do sprawdzenia czy można strzelać (dla innych skryptów)
+    void UpdateWeaponAmmoUI(MonoBehaviour weapon)
+    {
+        if (weapon is Gun gunWeapon && gunWeapon.BulletsText != null)
+        {
+            gunWeapon.BulletsText.text = $"{gunWeapon.BulletCount} / {gunWeapon.MaxBullets}";
+        }
+        else if (weapon is Shotgun shotgunWeapon && shotgunWeapon.BulletsText != null)
+        {
+            shotgunWeapon.BulletsText.text = $"{shotgunWeapon.BulletCount} / {shotgunWeapon.MaxBullets}";
+        }
+        else if (weapon is Rifle rifleWeapon && rifleWeapon.BulletsText != null)
+        {
+            rifleWeapon.BulletsText.text = $"{rifleWeapon.BulletCount} / {rifleWeapon.MaxBullets}";
+        }
+    }
+
+    void UpdateReloadUI(float progress)
+    {
+        // Możesz dodać pasek postępu
+    }
+
+    // METODY DŹWIĘKOWE
+    void PlayGunReloadSound()
+    {
+        PlayReloadSound(gunReloadClip, "GunReloadSound", 0.6f);
+    }
+
+    void PlayShotgunReloadSound()
+    {
+        PlayReloadSound(shotgunReloadClip, "ShotgunReloadSound", 0.7f);
+    }
+
+    void PlayRifleReloadSound()
+    {
+        PlayReloadSound(rifleReloadClip, "RifleReloadSound", 0.6f);
+    }
+
+    void PlayReloadSound(AudioClip clip, string soundName, float volume)
+    {
+        if (clip == null)
+        {
+            Debug.LogWarning($"No reload sound for {soundName}");
+            return;
+        }
+
+        currentReloadSoundObject = new GameObject(soundName);
+        AudioSource audioSource = currentReloadSoundObject.AddComponent<AudioSource>();
+
+        audioSource.clip = clip;
+        audioSource.volume = volume;
+        audioSource.pitch = 1.0f;
+        audioSource.spatialBlend = 1.0f;
+        audioSource.loop = false;
+
+        audioSource.Play();
+        Destroy(currentReloadSoundObject, clip.length + 0.5f);
+    }
+
+    void CreateGunSound()
+    {
+        CreateSoundEffect(gunShotClip, "GunSoundInstance", 0.7f, 0.95f, 1.05f);
+    }
+
+    void CreateShotgunSound()
+    {
+        CreateSoundEffect(shotgunShotClip, "ShotgunSoundInstance", 0.8f, 0.9f, 1.1f);
+    }
+
+    void CreateRifleSound()
+    {
+        CreateSoundEffect(rifleShotClip, "RifleSoundInstance", 0.8f, 0.95f, 1.05f);
+    }
+
+    void CreateSoundEffect(AudioClip clip, string soundName, float volume, float minPitch, float maxPitch)
+    {
+        if (clip == null)
+        {
+            Debug.LogWarning($"No shot sound for {soundName}");
+            return;
+        }
+
+        GameObject soundObject = new GameObject(soundName);
+        AudioSource audioSource = soundObject.AddComponent<AudioSource>();
+
+        audioSource.clip = clip;
+        audioSource.volume = volume;
+        audioSource.pitch = Random.Range(minPitch, maxPitch);
+        audioSource.spatialBlend = 1.0f;
+        audioSource.maxDistance = 50f;
+        audioSource.rolloffMode = AudioRolloffMode.Logarithmic;
+
+        audioSource.Play();
+        Destroy(soundObject, clip.length + 0.1f);
+    }
+
+    // METODY PUBLICZNE
     public bool CanShoot()
     {
         return canShoot && !isReloading;
     }
 
-    // Metoda do sprawdzenia czy trwa przeładowanie (dla innych skryptów)
     public bool IsReloading()
     {
         return isReloading;
+    }
+
+    public int GetCurrentAmmo()
+    {
+        return currentWeaponType switch
+        {
+            1 => gun != null ? gun.BulletCount : 0,
+            2 => shotgun != null ? shotgun.BulletCount : 0,
+            3 => rifle != null ? rifle.BulletCount : 0,
+            _ => 0
+        };
+    }
+
+    public int GetMaxAmmo()
+    {
+        return currentWeaponType switch
+        {
+            1 => gun != null ? gun.MaxBullets : 0,
+            2 => shotgun != null ? shotgun.MaxBullets : 0,
+            3 => rifle != null ? rifle.MaxBullets : 0,
+            _ => 0
+        };
+    }
+
+    public int GetCurrentWeaponType()
+    {
+        return currentWeaponType;
+    }
+
+    public void AddAmmo(int weaponType, int amount)
+    {
+        switch (weaponType)
+        {
+            case 1:
+                if (gun != null) gun.BulletCount = Mathf.Clamp(gun.BulletCount + amount, 0, gun.MaxBullets);
+                break;
+            case 2:
+                if (shotgun != null) shotgun.BulletCount = Mathf.Clamp(shotgun.BulletCount + amount, 0, shotgun.MaxBullets);
+                break;
+            case 3:
+                if (rifle != null) rifle.BulletCount = Mathf.Clamp(rifle.BulletCount + amount, 0, rifle.MaxBullets);
+                break;
+        }
+    }
+
+    // DODANE: Pobierz aktualną broń
+    public MonoBehaviour GetCurrentWeapon()
+    {
+        return currentWeaponType switch
+        {
+            1 => gun,
+            2 => shotgun,
+            3 => rifle,
+            _ => null
+        };
+    }
+
+    // Czyszczenie
+    void OnDestroy()
+    {
+        if (currentReloadSoundObject != null)
+            Destroy(currentReloadSoundObject);
+    }
+
+    // Debugowanie
+    void OnGUI()
+    {
+        GUI.Label(new Rect(10, 10, 200, 20), $"Weapon: {currentWeaponType}");
+        GUI.Label(new Rect(10, 30, 200, 20), $"Ammo: {GetCurrentAmmo()}/{GetMaxAmmo()}");
+        GUI.Label(new Rect(10, 50, 200, 20), $"Can Shoot: {canShoot}");
+        GUI.Label(new Rect(10, 70, 200, 20), $"Reloading: {isReloading}");
+        GUI.Label(new Rect(10, 90, 200, 20), $"Aiming: {isAiming}");
     }
 }
