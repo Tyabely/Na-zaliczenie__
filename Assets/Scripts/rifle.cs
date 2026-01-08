@@ -114,7 +114,7 @@ public class Rifle : MonoBehaviour
             }
         }
 
-        // Inicjalizacja bufora wyg³adzania
+        // Inicjalizacja bufora wygï¿½adzania
         if (useSmoothingFilter)
         {
             positionBuffer = new Vector3[smoothingBufferSize];
